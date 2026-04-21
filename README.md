@@ -31,8 +31,19 @@ AIベースでクイズを生成し、遊ぶことができる。
 #### その他
 - [wrangler](https://developers.cloudflare.com/workers/wrangler/)
 
+## 開発環境
+> [!WARNING]
+> 以降の作業はすべて`dontaku-quiz-app`ディレクトリの作業です。
 
-## 環境構築
+
+### 環境構築
 ```zsh
 pnpm install
+```
+
+### 開発サーバー
+```zsh
+pnpm run dev
+
+# 終了したいときは`ctrl + c`で終了
 ```
