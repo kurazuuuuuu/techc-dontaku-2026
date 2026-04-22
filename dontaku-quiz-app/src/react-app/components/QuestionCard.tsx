@@ -1,3 +1,4 @@
+import { motion } from "motion/react";
 import type { SampleQuestion } from "../data/sampleQuestions";
 
 type QuestionCardProps = {
@@ -26,14 +27,16 @@ export function QuestionCard({
 
 			<div className="choice-grid">
 				{question.choices.map((choice) => (
-					<button
+					<motion.button
 						key={choice}
 						type="button"
 						className="choice-button"
 						onClick={() => onChoiceSelect(choice)}
+						whileHover={{ y: -2 }}
+						whileTap={{ scale: 0.99 }}
 					>
 						{choice}
-					</button>
+					</motion.button>
 				))}
 			</div>
 		</section>
