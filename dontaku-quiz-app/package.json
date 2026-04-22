@@ -16,7 +16,8 @@
 		"motion": "^12.38.0",
 		"pattern.css": "^1.0.0",
 		"react": "19.2.1",
-		"react-dom": "19.2.1"
+		"react-dom": "19.2.1",
+		"zod": "^4.3.6"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "1.15.3",
@@ -32,6 +33,7 @@
 		"typescript": "5.8.3",
 		"typescript-eslint": "8.48.0",
 		"vite": "^6.0.0",
+		"vitest": "^4.1.5",
 		"wrangler": "4.84.0"
 	},
 	"private": true,
