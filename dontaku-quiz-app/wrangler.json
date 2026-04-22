@@ -10,6 +10,14 @@
 	"compatibility_flags": [
 		"nodejs_compat"
 	],
+	"vars": {
+		"AI_GATEWAY_ID": "default"
+	},
+	"secrets": {
+		"required": [
+			"AI_GATEWAY_TOKEN"
+		]
+	},
 	"observability": {
 		"enabled": true
 	},
