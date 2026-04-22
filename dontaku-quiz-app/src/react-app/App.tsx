@@ -76,6 +76,10 @@ function App() {
 	};
 
 	const handleNext = async () => {
+		if (isLoading) {
+			return;
+		}
+
 		if (currentIndex >= TOTAL_QUESTIONS - 1) {
 			handleRestart();
 			return;

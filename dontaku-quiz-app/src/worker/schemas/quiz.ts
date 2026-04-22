@@ -19,6 +19,14 @@ export const quizQuestionSchema = z
 		generatedAt: z.string().datetime(),
 	})
 	.superRefine((value, ctx) => {
+		if (new Set(value.choices).size !== value.choices.length) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "choices は重複してはいけません。",
+				path: ["choices"],
+			});
+		}
+
 		if (!value.choices.includes(value.correctAnswer)) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
@@ -36,6 +44,14 @@ export const generatedQuizContentSchema = z
 		explanation: z.string().min(1),
 	})
 	.superRefine((value, ctx) => {
+		if (new Set(value.choices).size !== value.choices.length) {
+			ctx.addIssue({
+				code: z.ZodIssueCode.custom,
+				message: "choices は重複してはいけません。",
+				path: ["choices"],
+			});
+		}
+
 		if (!value.choices.includes(value.correctAnswer)) {
 			ctx.addIssue({
 				code: z.ZodIssueCode.custom,
@@ -92,6 +108,7 @@ export const quizQuestionJsonSchema = {
 			items: { type: "string", minLength: 1 },
 			minItems: 4,
 			maxItems: 4,
+			uniqueItems: true,
 		},
 		correctAnswer: { type: "string", minLength: 1 },
 		explanation: { type: "string", minLength: 1 },
@@ -118,6 +135,7 @@ export const generatedQuizContentJsonSchema = {
 			items: { type: "string", minLength: 1 },
 			minItems: 4,
 			maxItems: 4,
+			uniqueItems: true,
 		},
 		correctAnswer: { type: "string", minLength: 1 },
 		explanation: { type: "string", minLength: 1 },

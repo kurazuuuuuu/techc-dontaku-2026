@@ -32,4 +32,24 @@ describe("quiz schemas", () => {
 			}),
 		).toThrow(/correctAnswer/);
 	});
+
+	it("rejects a quiz with duplicate choices", () => {
+		expect(() =>
+			createQuizGenerationResponseSchema.parse({
+				quiz: {
+					id: "quiz-1",
+					topic: "博多どんたく",
+					question: "どの月？",
+					choices: ["3月", "5月", "5月", "11月"],
+					correctAnswer: "5月",
+					explanation: "説明",
+					generatedAt: "2026-04-22T00:00:00.000Z",
+				},
+				meta: {
+					searchQuery: "query",
+					retrievedChunkCount: 1,
+				},
+			}),
+		).toThrow(/choices/);
+	});
 });

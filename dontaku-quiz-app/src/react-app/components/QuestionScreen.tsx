@@ -20,19 +20,30 @@ export function QuestionScreen({
 	totalQuestions,
 }: QuestionScreenProps) {
 	const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
+	const [isAdvancing, setIsAdvancing] = useState(false);
 
 	const currentQuestion = questions[currentIndex] ?? questions[questions.length - 1];
 	const isLastQuestion = currentIndex === totalQuestions - 1;
 	const isCorrect = selectedChoice === currentQuestion.correctAnswer;
 
 	const handleNext = async () => {
+		if (isAdvancing) {
+			return;
+		}
+
 		if (isLastQuestion) {
 			onRestart();
 			return;
 		}
 
 		setSelectedChoice(null);
-		onNext();
+		setIsAdvancing(true);
+
+		try {
+			await onNext();
+		} finally {
+			setIsAdvancing(false);
+		}
 	};
 
 	return (
@@ -84,6 +95,7 @@ export function QuestionScreen({
 								type="button"
 								className="secondary-button"
 								onClick={() => setSelectedChoice(null)}
+								disabled={isAdvancing}
 								whileHover={{ y: -2 }}
 								whileTap={{ scale: 0.98 }}
 							>
@@ -93,10 +105,15 @@ export function QuestionScreen({
 								type="button"
 								className="primary-button"
 								onClick={handleNext}
+								disabled={isAdvancing}
 								whileHover={{ y: -2 }}
 								whileTap={{ scale: 0.98 }}
 							>
-								{isLastQuestion ? "タイトルへ戻る" : "次の問題へ"}
+								{isAdvancing
+									? "読み込み中..."
+									: isLastQuestion
+										? "タイトルへ戻る"
+										: "次の問題へ"}
 							</motion.button>
 						</div>
 					</Modal>
