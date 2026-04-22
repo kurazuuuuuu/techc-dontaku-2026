@@ -1,11 +1,16 @@
 import { z } from "zod";
 
+const quizHistorySchema = z.object({
+	topics: z.array(z.string().trim().min(1).max(120)).max(4).default([]),
+	questions: z.array(z.string().trim().min(1).max(200)).max(4).default([]),
+});
+
 export const createQuizGenerationRequestSchema = z.object({
-	topic: z
-		.string()
-		.trim()
-		.min(1, "topic は必須です。")
-		.max(120, "topic は120文字以内で指定してください。"),
+	sessionSeed: z.string().trim().min(1).max(120),
+	history: quizHistorySchema.default({
+		topics: [],
+		questions: [],
+	}),
 });
 
 export const quizQuestionSchema = z
@@ -38,6 +43,7 @@ export const quizQuestionSchema = z
 
 export const generatedQuizContentSchema = z
 	.object({
+		topic: z.string().min(1),
 		question: z.string().min(1),
 		choices: z.array(z.string().min(1)).length(4),
 		correctAnswer: z.string().min(1),
@@ -91,9 +97,26 @@ export const createQuizGenerationRequestJsonSchema = {
 	type: "object",
 	additionalProperties: false,
 	properties: {
-		topic: { type: "string", minLength: 1, maxLength: 120 },
+		sessionSeed: { type: "string", minLength: 1, maxLength: 120 },
+		history: {
+			type: "object",
+			additionalProperties: false,
+			properties: {
+				topics: {
+					type: "array",
+					items: { type: "string", minLength: 1, maxLength: 120 },
+					maxItems: 4,
+				},
+				questions: {
+					type: "array",
+					items: { type: "string", minLength: 1, maxLength: 200 },
+					maxItems: 4,
+				},
+			},
+			required: ["topics", "questions"],
+		},
 	},
-	required: ["topic"],
+	required: ["sessionSeed"],
 } as const;
 
 export const quizQuestionJsonSchema = {
@@ -129,6 +152,7 @@ export const generatedQuizContentJsonSchema = {
 	type: "object",
 	additionalProperties: false,
 	properties: {
+		topic: { type: "string", minLength: 1 },
 		question: { type: "string", minLength: 1 },
 		choices: {
 			type: "array",
@@ -140,7 +164,7 @@ export const generatedQuizContentJsonSchema = {
 		correctAnswer: { type: "string", minLength: 1 },
 		explanation: { type: "string", minLength: 1 },
 	},
-	required: ["question", "choices", "correctAnswer", "explanation"],
+	required: ["topic", "question", "choices", "correctAnswer", "explanation"],
 } as const;
 
 export const createQuizGenerationResponseJsonSchema = {

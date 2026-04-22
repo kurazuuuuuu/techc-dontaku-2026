@@ -16,6 +16,7 @@ describe("quiz generator", () => {
 								parts: [
 									{
 										text: `Here is the JSON requested:\n\`\`\`json\n${JSON.stringify({
+											topic: "開催時期",
 											question:
 												"博多どんたく港まつりは毎年何月に開催されるでしょう？",
 											choices: ["3月", "5月", "8月", "11月"],
@@ -34,11 +35,18 @@ describe("quiz generator", () => {
 		);
 
 		const payload = await generateQuizFromTopic(
-			{ topic: "博多どんたくの歴史" },
+			{
+				sessionSeed: "session-1",
+				history: {
+					topics: [],
+					questions: [],
+				},
+			},
 			{
 				DONTAKU_SEARCH: {
 					search: vi.fn().mockResolvedValue({
-						search_query: "博多どんたく 歴史",
+						search_query:
+							"博多どんたく 歴史 由来 文化 パレード 演舞 福岡 見どころ 名称 行事",
 						chunks: [
 							{
 								id: "chunk-1",
@@ -63,9 +71,10 @@ describe("quiz generator", () => {
 		);
 
 		expect(payload.quiz.correctAnswer).toBe("5月");
+		expect(payload.quiz.topic).toBe("開催時期");
 		expect(payload.meta.retrievedChunkCount).toBe(1);
 		expect(fetchMock).toHaveBeenCalledWith(
-			"https://gateway.ai.cloudflare.com/v1/account-id/dontaku-gateway/google-ai-studio/v1beta/models/gemini-2.5-flash:generateContent",
+			"https://gateway.ai.cloudflare.com/v1/account-id/dontaku-gateway/google-ai-studio/v1beta/models/gemini-2.5-flash-lite:generateContent",
 			expect.objectContaining({
 				method: "POST",
 			}),
@@ -75,11 +84,17 @@ describe("quiz generator", () => {
 	it("fails clearly when AI Gateway is not configured", async () => {
 		await expect(
 			generateQuizFromTopic(
-				{ topic: "博多どんたく" },
+			{
+				sessionSeed: "session-2",
+				history: {
+					topics: [],
+					questions: [],
+					},
+				},
 				{
 					DONTAKU_SEARCH: {
 						search: vi.fn().mockResolvedValue({
-							search_query: "博多どんたく",
+							search_query: "query",
 							chunks: [
 								{
 									id: "chunk-1",

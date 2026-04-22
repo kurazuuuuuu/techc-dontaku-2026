@@ -5,12 +5,27 @@ import {
 } from "./quiz";
 
 describe("quiz schemas", () => {
-	it("accepts a request with topic only", () => {
+	it("accepts a request with empty history", () => {
 		const parsed = createQuizGenerationRequestSchema.parse({
-			topic: "博多どんたく",
+			sessionSeed: "session-1",
+			history: {
+				topics: [],
+				questions: [],
+			},
 		});
 
-		expect(parsed.topic).toBe("博多どんたく");
+		expect(parsed.sessionSeed).toBe("session-1");
+		expect(parsed.history.topics).toEqual([]);
+		expect(parsed.history.questions).toEqual([]);
+	});
+
+	it("fills default history when omitted", () => {
+		const parsed = createQuizGenerationRequestSchema.parse({
+			sessionSeed: "session-2",
+		});
+
+		expect(parsed.history.topics).toEqual([]);
+		expect(parsed.history.questions).toEqual([]);
 	});
 
 	it("rejects a quiz whose correct answer is not included in choices", () => {

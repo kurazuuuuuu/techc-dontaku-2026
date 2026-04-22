@@ -3,19 +3,103 @@ import {
 	createQuizGenerationResponseSchema,
 	generatedQuizContentSchema,
 	type CreateQuizGenerationRequest,
-	type CreateQuizGenerationResponse,
 	type QuizQuestion,
 } from "../schemas/quiz";
 
 const MAX_CONTEXT_CHUNKS = 2;
 const MAX_CHUNK_TEXT_LENGTH = 420;
 const RETRY_CONTEXT_CHARS = 240;
-const QUIZ_CACHE_TTL_MS = 10 * 60 * 1000;
+
+type QueryProfile = {
+	id: string;
+	label: string;
+	searchQuery: string;
+	promptInstruction: string;
+	variationAngles: string[];
+};
+
+const QUERY_PROFILES: QueryProfile[] = [
+	{
+		id: "origin-history",
+		label: "起源と歴史",
+		searchQuery: "博多どんたく 起源 歴史 博多松囃子 由来 変遷",
+		promptInstruction: "起源や歴史の中でも、年代暗記だけでなく行事の成り立ちや変化に注目してください。",
+		variationAngles: ["ルーツ", "名称の変化", "受け継がれ方", "時代ごとの変化"],
+	},
+	{
+		id: "parade-performance",
+		label: "パレードと演舞",
+		searchQuery: "博多どんたく パレード 演舞 どんたく隊 ステージ 参加団体",
+		promptInstruction: "パレードや演舞の流れ、見方、参加団体の特徴に注目してください。",
+		variationAngles: ["パレード", "演舞", "どんたく隊", "ステージイベント"],
+	},
+	{
+		id: "festival-structure",
+		label: "祭りの構成",
+		searchQuery: "博多どんたく 行事 流れ スケジュール 催し 構成",
+		promptInstruction: "祭り全体の流れや構成要素、どのような催しがあるかに注目してください。",
+		variationAngles: ["開催日程", "行事の流れ", "催しの種類", "祭りの構成"],
+	},
+	{
+		id: "costume-symbols",
+		label: "衣装とシンボル",
+		searchQuery: "博多どんたく 衣装 しゃもじ シンボル 持ち物 装い",
+		promptInstruction: "衣装や道具、象徴的なモチーフに注目してください。",
+		variationAngles: ["しゃもじ", "衣装", "持ち物", "象徴"],
+	},
+	{
+		id: "food-culture",
+		label: "食と文化",
+		searchQuery: "博多どんたく 食 文化 屋台 福岡 名物 地域文化",
+		promptInstruction: "祭りと食、地域文化とのつながりに注目してください。",
+		variationAngles: ["屋台", "福岡名物", "地域文化", "食の楽しみ方"],
+	},
+	{
+		id: "sightseeing-city",
+		label: "街と観光",
+		searchQuery: "博多どんたく 福岡 観光 会場 見どころ 街並み 周辺スポット",
+		promptInstruction: "会場周辺の街や観光の楽しみ方、見どころに注目してください。",
+		variationAngles: ["会場周辺", "観光スポット", "街との関係", "見どころ"],
+	},
+	{
+		id: "access-mobility",
+		label: "アクセスと移動",
+		searchQuery: "博多どんたく アクセス 交通 会場 移動 公共交通",
+		promptInstruction: "会場へのアクセスや移動手段、混雑時の移動に注目してください。",
+		variationAngles: ["アクセス", "公共交通", "移動", "会場間の回り方"],
+	},
+	{
+		id: "participation-rules",
+		label: "参加方法とルール",
+		searchQuery: "博多どんたく 参加方法 ルール マナー 観覧 注意点",
+		promptInstruction: "参加方法、観覧マナー、注意点に注目してください。",
+		variationAngles: ["参加方法", "観覧マナー", "注意点", "ルール"],
+	},
+	{
+		id: "local-community",
+		label: "地域とのつながり",
+		searchQuery: "博多どんたく 地域 市民 福岡 地元 交流 伝統",
+		promptInstruction: "地元の人々や地域コミュニティとのつながりに注目してください。",
+		variationAngles: ["市民参加", "地域交流", "地元との関係", "受け継がれ方"],
+	},
+	{
+		id: "festival-trivia",
+		label: "祭りの豆知識",
+		searchQuery: "博多どんたく 豆知識 特徴 面白い 雑学 特色",
+		promptInstruction: "祭りの特色や意外性のある事実、豆知識に注目してください。",
+		variationAngles: ["特色", "雑学", "意外な事実", "ユニークさ"],
+	},
+];
 const geminiStructuredQuizSchema = {
 	type: "object",
 	additionalProperties: false,
-	propertyOrdering: ["question", "choices", "correctAnswer", "explanation"],
+	propertyOrdering: ["topic", "question", "choices", "correctAnswer", "explanation"],
 	properties: {
+		topic: {
+			type: "string",
+			description: "今回の問題テーマ名。短く簡潔にする。",
+			maxLength: 40,
+		},
 		question: {
 			type: "string",
 			description: "4択クイズの問題文。",
@@ -42,13 +126,8 @@ const geminiStructuredQuizSchema = {
 			maxLength: 140,
 		},
 	},
-	required: ["question", "choices", "correctAnswer", "explanation"],
+	required: ["topic", "question", "choices", "correctAnswer", "explanation"],
 } as const;
-
-const quizResponseCache = new Map<
-	string,
-	{ expiresAt: number; response: CreateQuizGenerationResponse }
->();
 
 type GatewayRuntimeEnv = Env & {
 	AI_GATEWAY_ID?: string;
@@ -103,29 +182,34 @@ export async function generateQuizFromTopic(
 	input: CreateQuizGenerationRequest,
 	env: Env,
 	dependencies: Partial<QuizGenerationDependencies> = {},
-): Promise<CreateQuizGenerationResponse> {
-	const cacheKey = createQuizCacheKey(input);
-	const cachedResponse = readCachedQuizResponse(cacheKey);
-	if (cachedResponse) {
-		return cachedResponse;
-	}
-
+) {
+	const queryProfile = selectQueryProfile(input);
 	const runSearch = dependencies.runSearch ?? searchDontakuContext;
 	const runStructuredGeneration =
 		dependencies.runStructuredGeneration ?? generateStructuredQuiz;
 
-	const searchResult = await runSearch(env, input);
+	const searchResult = await runSearch(env, {
+		...input,
+		queryProfile,
+	} as CreateQuizGenerationRequest & { queryProfile: QueryProfile });
 
 	if (searchResult.chunks.length === 0) {
 		throw new AppError(
 			"NO_RELEVANT_CONTEXT",
 			"クイズ生成に必要な関連資料が見つかりませんでした。",
 			424,
-			{ topic: input.topic },
+			{ history: input.history },
 		);
 	}
 
-	const quiz = await runStructuredGeneration(env, input, searchResult);
+	const quiz = await runStructuredGeneration(
+		env,
+		{
+			...input,
+			queryProfile,
+		} as CreateQuizGenerationRequest & { queryProfile: QueryProfile },
+		searchResult,
+	);
 
 	const response = createQuizGenerationResponseSchema.parse({
 		quiz,
@@ -134,18 +218,16 @@ export async function generateQuizFromTopic(
 			retrievedChunkCount: searchResult.chunks.length,
 		},
 	});
-
-	writeCachedQuizResponse(cacheKey, response);
 	return response;
 }
 
 async function searchDontakuContext(
 	env: Env,
-	input: CreateQuizGenerationRequest,
+	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
 ): Promise<SearchResult> {
 	const attempts = [
 		{
-			query: `${input.topic} 博多どんたく`,
+			query: input.queryProfile.searchQuery,
 			retrieval: {
 				retrieval_type: "hybrid" as const,
 				match_threshold: 0.08,
@@ -156,7 +238,7 @@ async function searchDontakuContext(
 			},
 		},
 		{
-			query: `${input.topic} 博多どんたく`,
+			query: input.queryProfile.searchQuery,
 			retrieval: {
 				retrieval_type: "vector" as const,
 				match_threshold: 0,
@@ -182,7 +264,7 @@ async function searchDontakuContext(
 		}
 
 		return {
-			search_query: attempts.at(-1)?.query ?? input.topic,
+			search_query: attempts.at(-1)?.query ?? input.queryProfile.searchQuery,
 			chunks: [],
 		};
 	} catch (error) {
@@ -192,7 +274,8 @@ async function searchDontakuContext(
 			502,
 			{
 				cause: normalizeError(error),
-				topic: input.topic,
+				history: input.history,
+				queryProfile: input.queryProfile.id,
 			},
 		);
 	}
@@ -200,7 +283,7 @@ async function searchDontakuContext(
 
 async function generateStructuredQuiz(
 	env: Env,
-	input: CreateQuizGenerationRequest,
+	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
 	searchResult: SearchResult,
 ): Promise<QuizQuestion> {
 	const context = searchResult.chunks
@@ -217,7 +300,6 @@ async function generateStructuredQuiz(
 		return createQuizGenerationResponseSchema.shape.quiz.parse({
 			...generatedQuiz,
 			id: crypto.randomUUID(),
-			topic: input.topic,
 			generatedAt: new Date().toISOString(),
 		});
 	} catch (error) {
@@ -236,7 +318,7 @@ async function generateStructuredQuiz(
 
 async function runGeminiStructuredQuizGeneration(
 	env: Env,
-	input: CreateQuizGenerationRequest,
+	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
 	context: string,
 ) {
 	const gatewayToken = readOptionalRuntimeString(
@@ -282,7 +364,8 @@ async function runGeminiStructuredQuizGeneration(
 			"[quiz-generator] Retrying Gemini structured JSON with compact prompt after MAX_TOKENS",
 			JSON.stringify(
 				{
-					topic: input.topic,
+					history: input.history,
+					queryProfile: input.queryProfile.id,
 					firstAttemptDiagnostics: buildGeminiResponseDiagnostics(response),
 					compactContextLength: compactContext.length,
 				},
@@ -294,33 +377,50 @@ async function runGeminiStructuredQuizGeneration(
 			client,
 			buildQuizPrompt(input, compactContext, true),
 		);
-		return parseGeminiQuizPayload(retryResponse, { topic: input.topic });
+		return parseGeminiQuizPayload(retryResponse, {
+			debugLabel: createDebugLabel(input),
+		});
 	}
 
-	return parseGeminiQuizPayload(response, { topic: input.topic });
+	return parseGeminiQuizPayload(response, {
+		debugLabel: createDebugLabel(input),
+	});
 }
 
 function buildQuizPrompt(
-	input: CreateQuizGenerationRequest,
+	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
 	context: string,
 	compactMode = false,
 ) {
+	const recentTopics = input.history.topics.join(" / ");
+	const recentQuestions = input.history.questions.join(" / ");
+	const preferredAngle = selectVariationAngle(input);
+
 	return [
-		`トピック: ${input.topic}`,
+		`今回の出題軸: ${input.queryProfile.label}`,
+		input.queryProfile.promptInstruction,
+		`今回とくに優先する切り口: ${preferredAngle}`,
+		"テーマ候補は幅広く選び、同じ事実の言い換えや数字違いだけの問題は避けてください。",
+		recentTopics
+			? `避ける既出テーマ: ${recentTopics}`
+			: "避ける既出テーマ: なし",
+		recentQuestions
+			? `避ける既出問題: ${recentQuestions}`
+			: "避ける既出問題: なし",
 		compactMode
-			? "以下の根拠を使って、短い4択クイズを1問生成してください。"
-			: "以下の根拠を使ってクイズを1問生成してください。",
+			? "以下の根拠を使って、これまでと切り口が重ならない短い4択クイズを1問生成してください。同じ事実の言い換えや年号違いだけの問題は避けてください。"
+			: "以下の根拠を使って、これまでと切り口が重ならない4択クイズを1問生成してください。同じ事実の言い換えや年号違いだけの問題は避けてください。",
 		context,
 	].join("\n\n");
 }
 
 function requestGeminiStructuredQuiz(client: GoogleGenAI, prompt: string) {
 	return client.models.generateContent({
-		model: "gemini-2.5-flash",
+		model: "gemini-2.5-flash-lite",
 		contents: prompt,
 		config: {
 			systemInstruction:
-				"与えられた根拠だけで博多どんたくの4択クイズを1問作成してください。根拠にない内容は禁止です。問題文と解説は簡潔にし、応答は JSON オブジェクトのみを返し、説明文、Markdown、コードフェンスは含めないでください。",
+				"与えられた根拠だけで博多どんたくの4択クイズを1問作成してください。根拠にない内容は禁止です。出題テーマは幅広く散らし、起源・歴史・由来だけに偏らないでください。既出テーマや既出問題に似た切り口は避け、同じ事実の言い換えや数字だけを変えた問題も避けてください。topic はその回の切り口がわかる簡潔なテーマ名にしてください。問題文と解説は簡潔にし、応答は JSON オブジェクトのみを返し、説明文、Markdown、コードフェンスは含めないでください。",
 			temperature: 0,
 			maxOutputTokens: 1024,
 			responseMimeType: "application/json",
@@ -351,7 +451,7 @@ function parseGeminiQuizPayload(response: {
 		safetyRatings?: unknown[];
 	};
 	text?: string;
-}, context: { topic: string }): Record<string, unknown> {
+}, context: { debugLabel: string }): Record<string, unknown> {
 	const candidateText = response.candidates?.[0]?.content?.parts
 		?.map((part) => part.text ?? "")
 		.join("")
@@ -362,7 +462,7 @@ function parseGeminiQuizPayload(response: {
 			"[quiz-generator] Gemini structured response missing text",
 			JSON.stringify(
 				{
-					topic: context.topic,
+					debugLabel: context.debugLabel,
 					diagnostics: buildGeminiResponseDiagnostics(response),
 				},
 				null,
@@ -381,7 +481,7 @@ function parseGeminiQuizPayload(response: {
 			"[quiz-generator] Failed to parse Gemini structured JSON",
 			JSON.stringify(
 				{
-					topic: context.topic,
+					debugLabel: context.debugLabel,
 					snippet: rawText.slice(0, 240),
 					extractedSnippet: jsonText.slice(0, 240),
 					diagnostics: buildGeminiResponseDiagnostics(response),
@@ -568,32 +668,36 @@ function trimSearchResult(result: SearchResult): SearchResult {
 	};
 }
 
-function createQuizCacheKey(input: CreateQuizGenerationRequest): string {
-	return input.topic;
+function selectQueryProfile(input: CreateQuizGenerationRequest): QueryProfile {
+	const startIndex = stableHash(input.sessionSeed) % QUERY_PROFILES.length;
+	const questionIndex = input.history.questions.length % QUERY_PROFILES.length;
+	return QUERY_PROFILES[(startIndex + questionIndex) % QUERY_PROFILES.length];
 }
 
-function readCachedQuizResponse(
-	key: string,
-): CreateQuizGenerationResponse | null {
-	const cached = quizResponseCache.get(key);
-	if (!cached) {
-		return null;
-	}
-
-	if (cached.expiresAt <= Date.now()) {
-		quizResponseCache.delete(key);
-		return null;
-	}
-
-	return cached.response;
+function selectVariationAngle(
+	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
+): string {
+	const angleIndex =
+		stableHash(
+			`${input.sessionSeed}:${input.history.questions.length}:${input.queryProfile.id}`,
+		) % input.queryProfile.variationAngles.length;
+	return input.queryProfile.variationAngles[angleIndex];
 }
 
-function writeCachedQuizResponse(
-	key: string,
-	response: CreateQuizGenerationResponse,
-) {
-	quizResponseCache.set(key, {
-		expiresAt: Date.now() + QUIZ_CACHE_TTL_MS,
-		response,
-	});
+function stableHash(value: string): number {
+	let hash = 0;
+
+	for (let index = 0; index < value.length; index += 1) {
+		hash = (hash * 31 + value.charCodeAt(index)) >>> 0;
+	}
+
+	return hash;
+}
+
+function createDebugLabel(
+	input: CreateQuizGenerationRequest & { queryProfile?: QueryProfile },
+): string {
+	return input.queryProfile
+		? `${input.queryProfile.id}:${input.sessionSeed}`
+		: input.sessionSeed;
 }

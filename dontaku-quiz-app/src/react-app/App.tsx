@@ -7,13 +7,14 @@ import { StartScreen } from "./components/StartScreen";
 import type { SampleQuestion } from "./data/sampleQuestions";
 
 const TOTAL_QUESTIONS = 5;
-const TOPICS = [
-	"博多どんたく 歴史と由来",
-	"博多どんたく パレードと演舞",
-	"博多どんたく 食べ物と文化",
-	"博多どんたく 福岡の見どころ",
-	"博多どんたく 祭りの基礎知識",
-];
+
+type QuizGenerationRequest = {
+	sessionSeed: string;
+	history: {
+		topics: string[];
+		questions: string[];
+	};
+};
 
 function App() {
 	const [hasStarted, setHasStarted] = useState(false);
@@ -21,14 +22,25 @@ function App() {
 	const [currentIndex, setCurrentIndex] = useState(0);
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
+	const [sessionSeed, setSessionSeed] = useState(() => crypto.randomUUID());
 
 	const fetchQuestion = useCallback(
-		async (topicIndex: number): Promise<SampleQuestion | null> => {
+		async (
+			activeSessionSeed: string,
+			historyQuestions: SampleQuestion[],
+		): Promise<SampleQuestion | null> => {
 			try {
+				const requestBody: QuizGenerationRequest = {
+					sessionSeed: activeSessionSeed,
+					history: {
+						topics: historyQuestions.slice(-4).map((item) => item.category),
+						questions: historyQuestions.slice(-4).map((item) => item.question),
+					},
+				};
 				const res = await fetch("/api/quiz/generate", {
 					method: "POST",
 					headers: { "Content-Type": "application/json" },
-					body: JSON.stringify({ topic: TOPICS[topicIndex % TOPICS.length] }),
+					body: JSON.stringify(requestBody),
 				});
 				if (!res.ok) {
 					throw new Error(`HTTP ${res.status}`);
@@ -58,12 +70,14 @@ function App() {
 	);
 
 	const handleStart = async () => {
+		const nextSessionSeed = crypto.randomUUID();
+		setSessionSeed(nextSessionSeed);
 		setIsLoading(true);
 		setError(null);
 		setQuestions([]);
 		setCurrentIndex(0);
 
-		const question = await fetchQuestion(0);
+		const question = await fetchQuestion(nextSessionSeed, []);
 		if (question) {
 			setQuestions([question]);
 			setHasStarted(true);
@@ -91,7 +105,7 @@ function App() {
 		}
 
 		setIsLoading(true);
-		const question = await fetchQuestion(currentIndex + 1);
+		const question = await fetchQuestion(sessionSeed, questions);
 		setIsLoading(false);
 
 		if (question) {
@@ -107,6 +121,7 @@ function App() {
 		setQuestions([]);
 		setCurrentIndex(0);
 		setError(null);
+		setSessionSeed(crypto.randomUUID());
 	};
 
 	return (

@@ -30,7 +30,11 @@ describe("quiz generation api", () => {
 		const response = await app.request("/api/quiz/generate", {
 			method: "POST",
 			body: JSON.stringify({
-				topic: "博多どんたくの歴史",
+				sessionSeed: "session-1",
+				history: {
+					topics: [],
+					questions: [],
+				},
 			}),
 			headers: {
 				"content-type": "application/json",
@@ -52,7 +56,11 @@ describe("quiz generation api", () => {
 		const response = await app.request("/api/quiz/generate", {
 			method: "POST",
 			body: JSON.stringify({
-				topic: "",
+				sessionSeed: "session-2",
+				history: {
+					topics: ["", "", "", "", ""],
+					questions: [],
+				},
 			}),
 			headers: {
 				"content-type": "application/json",
@@ -75,7 +83,11 @@ describe("quiz generation api", () => {
 		const response = await app.request("/api/quiz/generate", {
 			method: "POST",
 			body: JSON.stringify({
-				topic: "見つからない話題",
+				sessionSeed: "session-3",
+				history: {
+					topics: ["歴史"],
+					questions: ["前の問題"],
+				},
 			}),
 			headers: {
 				"content-type": "application/json",
