@@ -13,6 +13,16 @@
 	"observability": {
 		"enabled": true
 	},
+	"ai": {
+		"binding": "AI"
+	},
+	"ai_search": [
+		{
+			"binding": "DONTAKU_SEARCH",
+			"instance_name": "techc-dontaku-2026-public",
+			"remote": true
+		}
+	],
 	"upload_source_maps": true,
 	"assets": {
 		"directory": "./dist/client",
@@ -35,7 +45,9 @@
 	 * Note: Use secrets to store sensitive data.
 	 * https://developers.cloudflare.com/workers/configuration/secrets/
 	 */
-	// "vars": {  "MY_VARIABLE": "production_value" }
+	// "vars": {
+	// 	"AI_GATEWAY_ID": "your-ai-gateway-id"
+	// }
 	/**
 	 * Service Bindings (communicate between multiple Workers)
 	 * https://developers.cloudflare.com/workers/wrangler/configuration/#service-bindings
