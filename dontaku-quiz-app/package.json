@@ -27,6 +27,7 @@
 		"@types/react": "19.2.7",
 		"@types/react-dom": "19.2.3",
 		"@vitejs/plugin-react": "5.1.1",
+		"concurrently": "^9.2.1",
 		"eslint": "9.39.2",
 		"eslint-plugin-react-hooks": "7.0.1",
 		"eslint-plugin-react-refresh": "0.4.24",
@@ -38,14 +39,18 @@
 		"wrangler": "4.84.0"
 	},
 	"private": true,
+	"packageManager": "pnpm@10.33.0",
 	"scripts": {
 		"build": "tsc -b && vite build",
 		"cf-typegen": "wrangler types",
 		"check": "tsc && vite build && wrangler deploy --dry-run",
 		"deploy": "wrangler deploy",
-		"dev": "vite",
+		"dev": "concurrently -k -n worker,web -c blue,green \"pnpm run dev:worker\" \"pnpm run dev:web\"",
+		"dev:web": "vite --port 5173 --strictPort",
+		"dev:worker": "wrangler dev --port 8787",
 		"lint": "eslint .",
-		"preview": "npm run build && vite preview"
+		"preview": "npm run build && vite preview",
+		"test": "vitest run --config vitest.config.ts"
 	},
 	"type": "module"
 }
