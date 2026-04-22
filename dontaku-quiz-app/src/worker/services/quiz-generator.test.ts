@@ -10,16 +10,21 @@ describe("quiz generator", () => {
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response(
 				JSON.stringify({
-					choices: [
+					candidates: [
 						{
-							message: {
-								content: JSON.stringify({
-									question: "博多どんたく港まつりは毎年何月に開催されるでしょう？",
-									choices: ["3月", "5月", "8月", "11月"],
-									correctAnswer: "5月",
-									explanation:
-										"博多どんたく港まつりは例年5月3日と4日に開催されます。",
-								}),
+							content: {
+								parts: [
+									{
+										text: `Here is the JSON requested:\n\`\`\`json\n${JSON.stringify({
+											question:
+												"博多どんたく港まつりは毎年何月に開催されるでしょう？",
+											choices: ["3月", "5月", "8月", "11月"],
+											correctAnswer: "5月",
+											explanation:
+												"博多どんたく港まつりは例年5月3日と4日に開催されます。",
+										})}\n\`\`\``,
+									},
+								],
 							},
 						},
 					],
@@ -52,6 +57,7 @@ describe("quiz generator", () => {
 							),
 					}),
 				},
+				AI_GATEWAY_TOKEN: "cf-aig-token",
 				AI_GATEWAY_ID: "dontaku-gateway",
 			} as unknown as Env,
 		);
@@ -59,7 +65,7 @@ describe("quiz generator", () => {
 		expect(payload.quiz.correctAnswer).toBe("5月");
 		expect(payload.meta.retrievedChunkCount).toBe(1);
 		expect(fetchMock).toHaveBeenCalledWith(
-			"https://gateway.ai.cloudflare.com/v1/account-id/dontaku-gateway/compat/chat/completions",
+			"https://gateway.ai.cloudflare.com/v1/account-id/dontaku-gateway/google-ai-studio/v1beta/models/gemini-2.5-flash:generateContent",
 			expect.objectContaining({
 				method: "POST",
 			}),

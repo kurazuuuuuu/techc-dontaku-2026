@@ -1,3 +1,4 @@
+import { GoogleGenAI } from "@google/genai";
 import {
 	createQuizGenerationResponseSchema,
 	generatedQuizContentSchema,
@@ -6,10 +7,43 @@ import {
 	type QuizQuestion,
 } from "../schemas/quiz";
 
-const DEFAULT_MODEL = "google-ai-studio/gemini-2.5-flash";
 const MAX_CONTEXT_CHUNKS = 2;
 const MAX_CHUNK_TEXT_LENGTH = 420;
+const RETRY_CONTEXT_CHARS = 240;
 const QUIZ_CACHE_TTL_MS = 10 * 60 * 1000;
+const geminiStructuredQuizSchema = {
+	type: "object",
+	additionalProperties: false,
+	propertyOrdering: ["question", "choices", "correctAnswer", "explanation"],
+	properties: {
+		question: {
+			type: "string",
+			description: "4択クイズの問題文。",
+			maxLength: 80,
+		},
+		choices: {
+			type: "array",
+			description: "必ず4件の選択肢。",
+			items: {
+				type: "string",
+				maxLength: 40,
+			},
+			minItems: 4,
+			maxItems: 4,
+		},
+		correctAnswer: {
+			type: "string",
+			description: "choices の中から1件だけ選ぶ正答。",
+			maxLength: 40,
+		},
+		explanation: {
+			type: "string",
+			description: "正答の根拠説明。",
+			maxLength: 140,
+		},
+	},
+	required: ["question", "choices", "correctAnswer", "explanation"],
+} as const;
 
 const quizResponseCache = new Map<
 	string,
@@ -177,30 +211,8 @@ async function generateStructuredQuiz(
 		.join("\n\n");
 
 	try {
-		const messages = [
-			{
-				role: "system" as const,
-				content:
-					"与えられた根拠だけで博多どんたくの4択クイズを1問作成してください。根拠にない内容は禁止です。",
-			},
-			{
-				role: "developer" as const,
-				content:
-					"先頭の1文字を必ず { にしてください。question, choices[4], correctAnswer, explanation を持つJSONオブジェクトだけを1行で返してください。question は35文字以内、choices は各12文字以内、explanation は45文字以内。前置き・後書き・コードブロック・改行は禁止です。",
-			},
-			{
-				role: "user" as const,
-				content: [
-					`トピック: ${input.topic}`,
-					"以下の根拠を使ってクイズを1問生成してください。",
-					context,
-				].join("\n\n"),
-			},
-		];
-
-		const result = await runGenerationWithFallback(env, messages);
-		const normalized = normalizeAiResponse(result);
-		const generatedQuiz = generatedQuizContentSchema.parse(normalized);
+		const result = await runGeminiStructuredQuizGeneration(env, input, context);
+		const generatedQuiz = generatedQuizContentSchema.parse(result);
 
 		return createQuizGenerationResponseSchema.shape.quiz.parse({
 			...generatedQuiz,
@@ -222,47 +234,26 @@ async function generateStructuredQuiz(
 	}
 }
 
-async function runGenerationWithFallback(
+async function runGeminiStructuredQuizGeneration(
 	env: Env,
-	messages: Array<{ role: "system" | "developer" | "user"; content: string }>,
+	input: CreateQuizGenerationRequest,
+	context: string,
 ) {
-	return runAiGatewayChatCompletion(env, messages);
-}
-
-async function runAiGatewayChatCompletion(
-	env: Env,
-	messages: Array<{ role: "system" | "developer" | "user"; content: string }>,
-) {
-	const gatewayUrl = await getAiGatewayChatCompletionsUrl(env);
 	const gatewayToken = readOptionalRuntimeString(
 		(env as GatewayRuntimeEnv).AI_GATEWAY_TOKEN,
 	);
-
-	const response = await fetch(gatewayUrl, {
-		method: "POST",
-		headers: buildAiGatewayHeaders(gatewayToken),
-		body: JSON.stringify({
-			model: DEFAULT_MODEL,
-			messages,
-			max_tokens: 320,
-			temperature: 0.2,
-		}),
-	});
-
-	if (!response.ok) {
-		throw new Error(
-			`AI Gateway request failed: ${response.status} ${await response.text()}`,
+	if (!gatewayToken) {
+		throw new AppError(
+			"AI_GATEWAY_NOT_CONFIGURED",
+			"AI Gateway の設定が見つかりませんでした。",
+			502,
+			{ missing: ["AI_GATEWAY_TOKEN"] },
 		);
 	}
 
-	return (await response.json()) as unknown;
-}
-
-async function getAiGatewayChatCompletionsUrl(env: Env): Promise<string> {
 	const gatewayId = readOptionalRuntimeString(
 		(env as GatewayRuntimeEnv).AI_GATEWAY_ID,
 	);
-
 	if (!gatewayId) {
 		throw new AppError(
 			"AI_GATEWAY_NOT_CONFIGURED",
@@ -273,55 +264,134 @@ async function getAiGatewayChatCompletionsUrl(env: Env): Promise<string> {
 	}
 
 	const baseUrl = await env.AI.gateway(gatewayId).getUrl();
-	return new URL("compat/chat/completions", baseUrl).toString();
+	const client = new GoogleGenAI({
+		apiKey: gatewayToken,
+		httpOptions: {
+			baseUrl: new URL("google-ai-studio", baseUrl).toString(),
+		},
+	});
+
+	const response = await requestGeminiStructuredQuiz(
+		client,
+		buildQuizPrompt(input, context),
+	);
+	const finishReason = response.candidates?.[0]?.finishReason;
+	if (finishReason === "MAX_TOKENS") {
+		const compactContext = context.slice(0, RETRY_CONTEXT_CHARS);
+		console.warn(
+			"[quiz-generator] Retrying Gemini structured JSON with compact prompt after MAX_TOKENS",
+			JSON.stringify(
+				{
+					topic: input.topic,
+					firstAttemptDiagnostics: buildGeminiResponseDiagnostics(response),
+					compactContextLength: compactContext.length,
+				},
+				null,
+				2,
+			),
+		);
+		const retryResponse = await requestGeminiStructuredQuiz(
+			client,
+			buildQuizPrompt(input, compactContext, true),
+		);
+		return parseGeminiQuizPayload(retryResponse, { topic: input.topic });
+	}
+
+	return parseGeminiQuizPayload(response, { topic: input.topic });
 }
 
-function buildAiGatewayHeaders(gatewayToken?: string): HeadersInit {
-	const headers: HeadersInit = {
-		"content-type": "application/json",
-		"cf-aig-cache-ttl": "300",
+function buildQuizPrompt(
+	input: CreateQuizGenerationRequest,
+	context: string,
+	compactMode = false,
+) {
+	return [
+		`トピック: ${input.topic}`,
+		compactMode
+			? "以下の根拠を使って、短い4択クイズを1問生成してください。"
+			: "以下の根拠を使ってクイズを1問生成してください。",
+		context,
+	].join("\n\n");
+}
+
+function requestGeminiStructuredQuiz(client: GoogleGenAI, prompt: string) {
+	return client.models.generateContent({
+		model: "gemini-2.5-flash",
+		contents: prompt,
+		config: {
+			systemInstruction:
+				"与えられた根拠だけで博多どんたくの4択クイズを1問作成してください。根拠にない内容は禁止です。問題文と解説は簡潔にし、応答は JSON オブジェクトのみを返し、説明文、Markdown、コードフェンスは含めないでください。",
+			temperature: 0,
+			maxOutputTokens: 1024,
+			responseMimeType: "application/json",
+			responseJsonSchema: geminiStructuredQuizSchema,
+			thinkingConfig: {
+				thinkingBudget: 0,
+				includeThoughts: false,
+			},
+		},
+	});
+}
+
+function parseGeminiQuizPayload(response: {
+	candidates?: Array<{
+		finishReason?: string;
+		finishMessage?: string;
+		content?: {
+			parts?: Array<{
+				text?: string;
+				functionCall?: unknown;
+				inlineData?: unknown;
+			}>;
+		};
+	}>;
+	promptFeedback?: {
+		blockReason?: string;
+		blockReasonMessage?: string;
+		safetyRatings?: unknown[];
 	};
-
-	if (gatewayToken) {
-		headers["cf-aig-authorization"] = `Bearer ${gatewayToken}`;
+	text?: string;
+}, context: { topic: string }): Record<string, unknown> {
+	const candidateText = response.candidates?.[0]?.content?.parts
+		?.map((part) => part.text ?? "")
+		.join("")
+		.trim();
+	const rawText = response.text ?? candidateText;
+	if (!rawText) {
+		console.error(
+			"[quiz-generator] Gemini structured response missing text",
+			JSON.stringify(
+				{
+					topic: context.topic,
+					diagnostics: buildGeminiResponseDiagnostics(response),
+				},
+				null,
+				2,
+			),
+		);
+		throw new Error("Gemini response did not include structured text.");
 	}
 
-	return headers;
-}
-
-function normalizeAiResponse(result: unknown): Record<string, unknown> {
-	if (isRecord(result)) {
-		const openAiCompatibleContent = extractOpenAiCompatibleContent(result);
-		if (openAiCompatibleContent) {
-			return parseJsonRecord(openAiCompatibleContent);
-		}
-
-		if (isRecord(result.response)) {
-			return result.response;
-		}
-
-		if (typeof result.response === "string") {
-			return parseJsonRecord(result.response);
-		}
-
-		if (typeof result.result === "string") {
-			return parseJsonRecord(result.result);
-		}
-
-		return result;
-	}
-
-	throw new Error("AI response was not an object.");
-}
-
-function parseJsonRecord(value: string): Record<string, unknown> {
-	const jsonText = extractJsonObjectString(value);
+	const jsonText = extractJsonObjectString(rawText);
 	let parsed: unknown;
 	try {
 		parsed = JSON.parse(jsonText) as unknown;
 	} catch (error) {
+		console.error(
+			"[quiz-generator] Failed to parse Gemini structured JSON",
+			JSON.stringify(
+				{
+					topic: context.topic,
+					snippet: rawText.slice(0, 240),
+					extractedSnippet: jsonText.slice(0, 240),
+					diagnostics: buildGeminiResponseDiagnostics(response),
+				},
+				null,
+				2,
+			),
+		);
 		throw new Error(
-			`Failed to parse AI JSON. snippet=${JSON.stringify(value.slice(0, 240))}`,
+			`Failed to parse AI JSON. snippet=${JSON.stringify(rawText.slice(0, 240))}`,
 			{ cause: error },
 		);
 	}
@@ -346,6 +416,53 @@ function normalizeError(error: unknown) {
 	return error;
 }
 
+function buildGeminiResponseDiagnostics(response: {
+	candidates?: Array<{
+		finishReason?: string;
+		finishMessage?: string;
+		content?: {
+			parts?: Array<{
+				text?: string;
+				functionCall?: unknown;
+				inlineData?: unknown;
+			}>;
+		};
+	}>;
+	promptFeedback?: {
+		blockReason?: string;
+		blockReasonMessage?: string;
+		safetyRatings?: unknown[];
+	};
+	text?: string;
+}) {
+	return {
+		hasTopLevelText: Boolean(response.text),
+		topLevelTextSnippet: response.text?.slice(0, 160),
+		candidateCount: response.candidates?.length ?? 0,
+		candidates:
+			response.candidates?.map((candidate, index) => ({
+				index,
+				finishReason: candidate.finishReason,
+				finishMessage: candidate.finishMessage,
+				partCount: candidate.content?.parts?.length ?? 0,
+				parts:
+					candidate.content?.parts?.map((part) => ({
+						hasText: Boolean(part.text),
+						textSnippet: part.text?.slice(0, 120),
+						hasFunctionCall: Boolean(part.functionCall),
+						hasInlineData: Boolean(part.inlineData),
+					})) ?? [],
+			})) ?? [],
+		promptFeedback: response.promptFeedback
+			? {
+					blockReason: response.promptFeedback.blockReason,
+					blockReasonMessage: response.promptFeedback.blockReasonMessage,
+					safetyRatingCount: response.promptFeedback.safetyRatings?.length ?? 0,
+				}
+			: undefined,
+	};
+}
+
 function extractJsonObjectString(value: string): string {
 	const trimmed = value.trim();
 	const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i);
@@ -353,62 +470,83 @@ function extractJsonObjectString(value: string): string {
 		return fenced[1].trim();
 	}
 
-	const start = trimmed.indexOf("{");
-	const end = trimmed.lastIndexOf("}");
-	if (start >= 0 && end > start) {
-		return trimmed.slice(start, end + 1);
+	const start = findFirstJsonStart(trimmed);
+	if (start >= 0) {
+		const extracted = extractBalancedJson(trimmed, start);
+		if (extracted) {
+			return extracted;
+		}
 	}
 
 	return trimmed;
 }
 
-function extractOpenAiCompatibleContent(
-	result: Record<string, unknown>,
-): string | null {
-	const choices = result.choices;
-	if (!Array.isArray(choices) || choices.length === 0) {
-		return null;
+function findFirstJsonStart(value: string): number {
+	const objectStart = value.indexOf("{");
+	const arrayStart = value.indexOf("[");
+
+	if (objectStart < 0) {
+		return arrayStart;
 	}
 
-	const firstChoice = choices[0];
-	if (!isRecord(firstChoice) || !isRecord(firstChoice.message)) {
-		return null;
+	if (arrayStart < 0) {
+		return objectStart;
 	}
 
-	return extractMessageContent(firstChoice.message.content);
+	return Math.min(objectStart, arrayStart);
 }
 
-function extractMessageContent(content: unknown): string | null {
-	if (typeof content === "string") {
-		return content;
-	}
-
-	if (!Array.isArray(content)) {
+function extractBalancedJson(value: string, startIndex: number): string | null {
+	const open = value[startIndex];
+	const close = open === "{" ? "}" : open === "[" ? "]" : null;
+	if (!close) {
 		return null;
 	}
 
-	const textParts = content
-		.map((part) => {
-			if (!isRecord(part)) {
-				return null;
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+
+	for (let index = startIndex; index < value.length; index += 1) {
+		const char = value[index];
+
+		if (inString) {
+			if (escaped) {
+				escaped = false;
+				continue;
 			}
 
-			if (typeof part.text === "string") {
-				return part.text;
+			if (char === "\\") {
+				escaped = true;
+				continue;
 			}
 
-			if (
-				part.type === "output_text" &&
-				typeof part.text === "string"
-			) {
-				return part.text;
+			if (char === '"') {
+				inString = false;
 			}
 
-			return null;
-		})
-		.filter((value): value is string => Boolean(value));
+			continue;
+		}
 
-	return textParts.length > 0 ? textParts.join("\n") : null;
+		if (char === '"') {
+			inString = true;
+			continue;
+		}
+
+		if (char === open) {
+			depth += 1;
+			continue;
+		}
+
+		if (char === close) {
+			depth -= 1;
+			if (depth === 0) {
+				return value.slice(startIndex, index + 1);
+			}
+		}
+	}
+
+	return null;
 }
 
 function readOptionalRuntimeString(value: unknown): string | undefined {

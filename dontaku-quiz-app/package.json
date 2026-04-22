@@ -12,6 +12,7 @@
 		"publish": true
 	},
 	"dependencies": {
+		"@google/genai": "^1.50.1",
 		"hono": "4.11.1",
 		"motion": "^12.38.0",
 		"pattern.css": "^1.0.0",

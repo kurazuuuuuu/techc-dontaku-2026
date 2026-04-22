@@ -5,28 +5,45 @@ import { Modal } from "./Modal";
 import { QuestionCard } from "./QuestionCard";
 
 type QuestionScreenProps = {
+	onNext: () => Promise<void>;
 	onRestart: () => void;
 	questions: SampleQuestion[];
+	currentIndex: number;
+	totalQuestions: number;
 };
 
 export function QuestionScreen({
+	onNext,
 	onRestart,
 	questions,
+	currentIndex,
+	totalQuestions,
 }: QuestionScreenProps) {
-	const [currentIndex, setCurrentIndex] = useState(0);
 	const [selectedChoice, setSelectedChoice] = useState<string | null>(null);
+	const [isAdvancing, setIsAdvancing] = useState(false);
 
-	const currentQuestion = questions[currentIndex];
-	const isLastQuestion = currentIndex === questions.length - 1;
+	const currentQuestion = questions[currentIndex] ?? questions[questions.length - 1];
+	const isLastQuestion = currentIndex === totalQuestions - 1;
+	const isCorrect = selectedChoice === currentQuestion.correctAnswer;
 
-	const handleNext = () => {
+	const handleNext = async () => {
+		if (isAdvancing) {
+			return;
+		}
+
 		if (isLastQuestion) {
 			onRestart();
 			return;
 		}
 
-		setCurrentIndex((index) => index + 1);
 		setSelectedChoice(null);
+		setIsAdvancing(true);
+
+		try {
+			await onNext();
+		} finally {
+			setIsAdvancing(false);
+		}
 	};
 
 	return (
@@ -55,7 +72,7 @@ export function QuestionScreen({
 			<QuestionCard
 				question={currentQuestion}
 				questionNumber={currentIndex + 1}
-				totalQuestions={questions.length}
+				totalQuestions={totalQuestions}
 				onChoiceSelect={setSelectedChoice}
 			/>
 
@@ -64,14 +81,21 @@ export function QuestionScreen({
 					<Modal title="回答を確認" onClose={() => setSelectedChoice(null)}>
 						<p className="modal-lead">選んだ答え</p>
 						<p className="modal-choice">{selectedChoice}</p>
-						<p className="modal-text">
-							この画面はクイズの流れを確認するための表示です。次の問題へ進めます。
+						<p className={`modal-result ${isCorrect ? "correct" : "incorrect"}`}>
+							{isCorrect ? "正解！🎉" : "不正解…"}
 						</p>
+						{!isCorrect && (
+							<p className="modal-answer">
+								正解: <strong>{currentQuestion.correctAnswer}</strong>
+							</p>
+						)}
+						<p className="modal-text">{currentQuestion.explanation}</p>
 						<div className="modal-actions">
 							<motion.button
 								type="button"
 								className="secondary-button"
 								onClick={() => setSelectedChoice(null)}
+								disabled={isAdvancing}
 								whileHover={{ y: -2 }}
 								whileTap={{ scale: 0.98 }}
 							>
@@ -81,10 +105,15 @@ export function QuestionScreen({
 								type="button"
 								className="primary-button"
 								onClick={handleNext}
+								disabled={isAdvancing}
 								whileHover={{ y: -2 }}
 								whileTap={{ scale: 0.98 }}
 							>
-								{isLastQuestion ? "タイトルへ戻る" : "次の問題へ"}
+								{isAdvancing
+									? "読み込み中..."
+									: isLastQuestion
+										? "タイトルへ戻る"
+										: "次の問題へ"}
 							</motion.button>
 						</div>
 					</Modal>

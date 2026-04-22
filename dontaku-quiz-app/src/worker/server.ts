@@ -95,6 +95,8 @@ export function createApp(options: CreateAppOptions = {}) {
 	});
 
 	app.onError((error, c) => {
+		console.error("[server] Unhandled error:", error);
+
 		if (error instanceof HTTPException) {
 			return error.getResponse();
 		}
