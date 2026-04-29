@@ -7,6 +7,16 @@ describe("quiz generator", () => {
 	});
 
 	it("generates a quiz through AI Gateway with Gemini", async () => {
+		const searchMock = vi.fn().mockImplementation(async ({ query }) => ({
+			search_query: query,
+			chunks: [
+				{
+					id: "chunk-1",
+					text: "博多どんたく港まつりは毎年5月3日と4日に開催されます。",
+					item: { key: "dontaku/history.md" },
+				},
+			],
+		}));
 		const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
 			new Response(
 				JSON.stringify({
@@ -44,17 +54,7 @@ describe("quiz generator", () => {
 			},
 			{
 				DONTAKU_SEARCH: {
-					search: vi.fn().mockResolvedValue({
-						search_query:
-							"博多どんたく 歴史 由来 文化 パレード 演舞 福岡 見どころ 名称 行事",
-						chunks: [
-							{
-								id: "chunk-1",
-								text: "博多どんたく港まつりは毎年5月3日と4日に開催されます。",
-								item: { key: "dontaku/history.md" },
-							},
-						],
-					}),
+					search: searchMock,
 				},
 				AI: {
 					gateway: vi.fn().mockReturnValue({
@@ -73,6 +73,12 @@ describe("quiz generator", () => {
 		expect(payload.quiz.correctAnswer).toBe("5月");
 		expect(payload.quiz.topic).toBe("開催時期");
 		expect(payload.meta.retrievedChunkCount).toBe(1);
+		expect(payload.meta.searchQuery).toBe(searchMock.mock.calls[0]?.[0]?.query);
+		expect(searchMock).toHaveBeenCalledWith(
+			expect.objectContaining({
+				query: expect.stringContaining("博多どんたく"),
+			}),
+		);
 		expect(fetchMock).toHaveBeenCalledWith(
 			"https://gateway.ai.cloudflare.com/v1/account-id/dontaku-gateway/google-ai-studio/v1beta/models/gemini-2.5-flash-lite:generateContent",
 			expect.objectContaining({
@@ -84,11 +90,11 @@ describe("quiz generator", () => {
 	it("fails clearly when AI Gateway is not configured", async () => {
 		await expect(
 			generateQuizFromTopic(
-			{
-				sessionSeed: "session-2",
-				history: {
-					topics: [],
-					questions: [],
+				{
+					sessionSeed: "session-2",
+					history: {
+						topics: [],
+						questions: [],
 					},
 				},
 				{
@@ -111,5 +117,66 @@ describe("quiz generator", () => {
 		).rejects.toMatchObject({
 			code: "AI_GATEWAY_NOT_CONFIGURED",
 		});
+	});
+
+	it("changes the selected plan as question history grows", async () => {
+		const seenQueries: string[] = [];
+		const runSearch = vi.fn().mockImplementation(async (_env, input) => {
+			seenQueries.push(input.queryPlan.searchQuery);
+			return {
+				search_query: input.queryPlan.searchQuery,
+				chunks: [
+					{
+						id: "chunk-1",
+						text: "博多どんたくではさまざまな催しが行われます。",
+					},
+				],
+			};
+		});
+		const runStructuredGeneration = vi
+			.fn()
+			.mockImplementation(async (_env, input) => ({
+				id: `quiz-${input.history.questions.length}`,
+				topic: input.queryPlan.promptInstruction.label,
+				question: "どんな祭りでしょう？",
+				choices: ["にぎやか", "静か", "雪まつり", "夜だけ"],
+				correctAnswer: "にぎやか",
+				explanation: "多くの催しが行われる祭りだからです。",
+				generatedAt: new Date("2026-04-29T00:00:00.000Z").toISOString(),
+			}));
+
+		await generateQuizFromTopic(
+			{
+				sessionSeed: "session-3",
+				history: {
+					topics: [],
+					questions: [],
+				},
+			},
+			{} as Env,
+			{
+				runSearch,
+				runStructuredGeneration,
+			},
+		);
+
+		await generateQuizFromTopic(
+			{
+				sessionSeed: "session-3",
+				history: {
+					topics: ["前回テーマ"],
+					questions: ["前回問題"],
+				},
+			},
+			{} as Env,
+			{
+				runSearch,
+				runStructuredGeneration,
+			},
+		);
+
+		expect(seenQueries).toHaveLength(2);
+		expect(seenQueries[0]).not.toBe(seenQueries[1]);
+		expect(runStructuredGeneration).toHaveBeenCalledTimes(2);
 	});
 });
