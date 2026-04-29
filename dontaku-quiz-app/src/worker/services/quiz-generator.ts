@@ -10,85 +10,157 @@ const MAX_CONTEXT_CHUNKS = 2;
 const MAX_CHUNK_TEXT_LENGTH = 420;
 const RETRY_CONTEXT_CHARS = 240;
 
-type QueryProfile = {
+type PromptInstructionOption = {
 	id: string;
 	label: string;
-	searchQuery: string;
-	promptInstruction: string;
-	variationAngles: string[];
+	instruction: string;
 };
 
-const QUERY_PROFILES: QueryProfile[] = [
+type SearchKeywordOption = {
+	id: string;
+	label: string;
+	terms: string[];
+};
+
+type AngleOption = {
+	id: string;
+	label: string;
+};
+
+type QueryPlan = {
+	promptInstruction: PromptInstructionOption;
+	searchKeyword: SearchKeywordOption;
+	angle: AngleOption;
+	searchQuery: string;
+};
+
+const PROMPT_INSTRUCTIONS: PromptInstructionOption[] = [
 	{
 		id: "origin-history",
 		label: "起源と歴史",
-		searchQuery: "博多どんたく 起源 歴史 博多松囃子 由来 変遷",
-		promptInstruction: "起源や歴史の中でも、年代暗記だけでなく行事の成り立ちや変化に注目してください。",
-		variationAngles: ["ルーツ", "名称の変化", "受け継がれ方", "時代ごとの変化"],
+		instruction:
+			"起源や歴史を扱う場合でも、年号暗記ではなく、行事がどう始まり、どう変わってきたかに注目してください。",
 	},
 	{
 		id: "parade-performance",
 		label: "パレードと演舞",
-		searchQuery: "博多どんたく パレード 演舞 どんたく隊 ステージ 参加団体",
-		promptInstruction: "パレードや演舞の流れ、見方、参加団体の特徴に注目してください。",
-		variationAngles: ["パレード", "演舞", "どんたく隊", "ステージイベント"],
+		instruction:
+			"パレードや演舞の流れ、楽しみ方、参加団体ごとの特徴が伝わる切り口を優先してください。",
 	},
 	{
 		id: "festival-structure",
 		label: "祭りの構成",
-		searchQuery: "博多どんたく 行事 流れ スケジュール 催し 構成",
-		promptInstruction: "祭り全体の流れや構成要素、どのような催しがあるかに注目してください。",
-		variationAngles: ["開催日程", "行事の流れ", "催しの種類", "祭りの構成"],
+		instruction:
+			"祭り全体の流れや催しの種類を、初めて知る人にもイメージしやすい形で扱ってください。",
 	},
 	{
 		id: "costume-symbols",
 		label: "衣装とシンボル",
-		searchQuery: "博多どんたく 衣装 しゃもじ シンボル 持ち物 装い",
-		promptInstruction: "衣装や道具、象徴的なモチーフに注目してください。",
-		variationAngles: ["しゃもじ", "衣装", "持ち物", "象徴"],
+		instruction:
+			"衣装や道具、象徴的なモチーフの役割や意味が分かりやすく伝わる問題を優先してください。",
 	},
 	{
 		id: "food-culture",
 		label: "食と文化",
-		searchQuery: "博多どんたく 食 文化 屋台 福岡 名物 地域文化",
-		promptInstruction: "祭りと食、地域文化とのつながりに注目してください。",
-		variationAngles: ["屋台", "福岡名物", "地域文化", "食の楽しみ方"],
+		instruction:
+			"祭りと食、地域文化とのつながりを、親しみやすい話題から扱ってください。",
 	},
 	{
 		id: "sightseeing-city",
 		label: "街と観光",
-		searchQuery: "博多どんたく 福岡 観光 会場 見どころ 街並み 周辺スポット",
-		promptInstruction: "会場周辺の街や観光の楽しみ方、見どころに注目してください。",
-		variationAngles: ["会場周辺", "観光スポット", "街との関係", "見どころ"],
+		instruction:
+			"会場周辺の街や観光の楽しみ方、見どころがイメージできる内容を優先してください。",
 	},
 	{
 		id: "access-mobility",
 		label: "アクセスと移動",
-		searchQuery: "博多どんたく アクセス 交通 会場 移動 公共交通",
-		promptInstruction: "会場へのアクセスや移動手段、混雑時の移動に注目してください。",
-		variationAngles: ["アクセス", "公共交通", "移動", "会場間の回り方"],
+		instruction:
+			"会場へのアクセスや移動手段を、来場者目線で分かりやすく扱ってください。",
 	},
 	{
 		id: "participation-rules",
 		label: "参加方法とルール",
-		searchQuery: "博多どんたく 参加方法 ルール マナー 観覧 注意点",
-		promptInstruction: "参加方法、観覧マナー、注意点に注目してください。",
-		variationAngles: ["参加方法", "観覧マナー", "注意点", "ルール"],
+		instruction:
+			"参加方法、観覧マナー、注意点を、現地で役立つやさしい言葉で扱ってください。",
 	},
 	{
 		id: "local-community",
 		label: "地域とのつながり",
-		searchQuery: "博多どんたく 地域 市民 福岡 地元 交流 伝統",
-		promptInstruction: "地元の人々や地域コミュニティとのつながりに注目してください。",
-		variationAngles: ["市民参加", "地域交流", "地元との関係", "受け継がれ方"],
+		instruction:
+			"地元の人々や地域コミュニティとのつながりを、あたたかさが伝わる内容で扱ってください。",
 	},
 	{
 		id: "festival-trivia",
 		label: "祭りの豆知識",
-		searchQuery: "博多どんたく 豆知識 特徴 面白い 雑学 特色",
-		promptInstruction: "祭りの特色や意外性のある事実、豆知識に注目してください。",
-		variationAngles: ["特色", "雑学", "意外な事実", "ユニークさ"],
+		instruction:
+			"豆知識を扱う場合も、細かすぎる雑学ではなく、祭りらしさが伝わる事実を優先してください。",
 	},
+];
+
+const SEARCH_KEYWORDS: SearchKeywordOption[] = [
+	{
+		id: "history-roots",
+		label: "歴史",
+		terms: ["起源", "歴史", "由来", "変遷"],
+	},
+	{
+		id: "parade-events",
+		label: "パレード",
+		terms: ["パレード", "演舞", "どんたく隊", "ステージ"],
+	},
+	{
+		id: "schedule-flow",
+		label: "行事の流れ",
+		terms: ["行事", "流れ", "スケジュール", "催し"],
+	},
+	{
+		id: "costume-tools",
+		label: "衣装と道具",
+		terms: ["衣装", "しゃもじ", "シンボル", "持ち物"],
+	},
+	{
+		id: "food-local-culture",
+		label: "食と文化",
+		terms: ["食", "屋台", "名物", "地域文化"],
+	},
+	{
+		id: "city-sightseeing",
+		label: "観光",
+		terms: ["観光", "会場", "見どころ", "周辺スポット"],
+	},
+	{
+		id: "access-guide",
+		label: "アクセス",
+		terms: ["アクセス", "交通", "移動", "公共交通"],
+	},
+	{
+		id: "manners-rules",
+		label: "参加とマナー",
+		terms: ["参加方法", "観覧", "マナー", "注意点"],
+	},
+	{
+		id: "community",
+		label: "地域交流",
+		terms: ["地域", "市民", "地元", "交流"],
+	},
+	{
+		id: "features-trivia",
+		label: "特色",
+		terms: ["特色", "特徴", "面白い", "豆知識"],
+	},
+];
+
+const ANGLE_OPTIONS: AngleOption[] = [
+	{ id: "roots", label: "ルーツ" },
+	{ id: "changes", label: "変化" },
+	{ id: "role", label: "役割" },
+	{ id: "how-to-enjoy", label: "楽しみ方" },
+	{ id: "flow", label: "流れ" },
+	{ id: "differences", label: "違い" },
+	{ id: "symbols", label: "象徴" },
+	{ id: "participant-view", label: "参加者目線" },
+	{ id: "visitor-view", label: "来場者目線" },
+	{ id: "local-connection", label: "地域とのつながり" },
 ];
 const geminiStructuredQuizSchema = {
 	type: "object",
@@ -183,15 +255,15 @@ export async function generateQuizFromTopic(
 	env: Env,
 	dependencies: Partial<QuizGenerationDependencies> = {},
 ) {
-	const queryProfile = selectQueryProfile(input);
+	const queryPlan = buildQueryPlan(input);
 	const runSearch = dependencies.runSearch ?? searchDontakuContext;
 	const runStructuredGeneration =
 		dependencies.runStructuredGeneration ?? generateStructuredQuiz;
 
 	const searchResult = await runSearch(env, {
 		...input,
-		queryProfile,
-	} as CreateQuizGenerationRequest & { queryProfile: QueryProfile });
+		queryPlan,
+	} as CreateQuizGenerationRequest & { queryPlan: QueryPlan });
 
 	if (searchResult.chunks.length === 0) {
 		throw new AppError(
@@ -206,8 +278,8 @@ export async function generateQuizFromTopic(
 		env,
 		{
 			...input,
-			queryProfile,
-		} as CreateQuizGenerationRequest & { queryProfile: QueryProfile },
+			queryPlan,
+		} as CreateQuizGenerationRequest & { queryPlan: QueryPlan },
 		searchResult,
 	);
 
@@ -223,11 +295,11 @@ export async function generateQuizFromTopic(
 
 async function searchDontakuContext(
 	env: Env,
-	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
+	input: CreateQuizGenerationRequest & { queryPlan: QueryPlan },
 ): Promise<SearchResult> {
 	const attempts = [
 		{
-			query: input.queryProfile.searchQuery,
+			query: input.queryPlan.searchQuery,
 			retrieval: {
 				retrieval_type: "hybrid" as const,
 				match_threshold: 0.08,
@@ -238,7 +310,7 @@ async function searchDontakuContext(
 			},
 		},
 		{
-			query: input.queryProfile.searchQuery,
+			query: input.queryPlan.searchQuery,
 			retrieval: {
 				retrieval_type: "vector" as const,
 				match_threshold: 0,
@@ -264,7 +336,7 @@ async function searchDontakuContext(
 		}
 
 		return {
-			search_query: attempts.at(-1)?.query ?? input.queryProfile.searchQuery,
+			search_query: attempts.at(-1)?.query ?? input.queryPlan.searchQuery,
 			chunks: [],
 		};
 	} catch (error) {
@@ -275,7 +347,7 @@ async function searchDontakuContext(
 			{
 				cause: normalizeError(error),
 				history: input.history,
-				queryProfile: input.queryProfile.id,
+				queryPlan: describeQueryPlan(input.queryPlan),
 			},
 		);
 	}
@@ -283,7 +355,7 @@ async function searchDontakuContext(
 
 async function generateStructuredQuiz(
 	env: Env,
-	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
+	input: CreateQuizGenerationRequest & { queryPlan: QueryPlan },
 	searchResult: SearchResult,
 ): Promise<QuizQuestion> {
 	const context = searchResult.chunks
@@ -318,7 +390,7 @@ async function generateStructuredQuiz(
 
 async function runGeminiStructuredQuizGeneration(
 	env: Env,
-	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
+	input: CreateQuizGenerationRequest & { queryPlan: QueryPlan },
 	context: string,
 ) {
 	const gatewayToken = readOptionalRuntimeString(
@@ -365,7 +437,7 @@ async function runGeminiStructuredQuizGeneration(
 			JSON.stringify(
 				{
 					history: input.history,
-					queryProfile: input.queryProfile.id,
+					queryPlan: describeQueryPlan(input.queryPlan),
 					firstAttemptDiagnostics: buildGeminiResponseDiagnostics(response),
 					compactContextLength: compactContext.length,
 				},
@@ -388,19 +460,22 @@ async function runGeminiStructuredQuizGeneration(
 }
 
 function buildQuizPrompt(
-	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
+	input: CreateQuizGenerationRequest & { queryPlan: QueryPlan },
 	context: string,
 	compactMode = false,
 ) {
 	const recentTopics = input.history.topics.join(" / ");
 	const recentQuestions = input.history.questions.join(" / ");
-	const preferredAngle = selectVariationAngle(input);
+	const plan = input.queryPlan;
 
 	return [
-		`今回の出題軸: ${input.queryProfile.label}`,
-		input.queryProfile.promptInstruction,
-		`今回とくに優先する切り口: ${preferredAngle}`,
+		`今回の出題テーマ: ${plan.promptInstruction.label}`,
+		plan.promptInstruction.instruction,
+		`今回の検索キーワード群: ${plan.searchKeyword.label}（${plan.searchKeyword.terms.join(" / ")}）`,
+		`今回とくに優先する切り口: ${plan.angle.label}`,
 		"テーマ候補は幅広く選び、同じ事実の言い換えや数字違いだけの問題は避けてください。",
+		"小中学生でも読みやすい語彙を優先し、難しい固有名詞や専門的な言い回しはなるべく避けてください。",
+		"年号・人数・正式名称の丸暗記ではなく、『何のため』『どんな特徴』『どう楽しむか』が分かる問題を優先してください。",
 		recentTopics
 			? `避ける既出テーマ: ${recentTopics}`
 			: "避ける既出テーマ: なし",
@@ -409,7 +484,7 @@ function buildQuizPrompt(
 			: "避ける既出問題: なし",
 		compactMode
 			? "以下の根拠を使って、これまでと切り口が重ならない短い4択クイズを1問生成してください。同じ事実の言い換えや年号違いだけの問題は避けてください。"
-			: "以下の根拠を使って、これまでと切り口が重ならない4択クイズを1問生成してください。同じ事実の言い換えや年号違いだけの問題は避けてください。",
+			: "以下の根拠を使って、これまでと切り口が重ならない短い4択クイズを1問生成してください。同じ事実の言い換えや年号違いだけの問題は避けてください。根拠は守りつつ、細かすぎる事実に寄りすぎないでください。",
 		context,
 	].join("\n\n");
 }
@@ -420,7 +495,7 @@ function requestGeminiStructuredQuiz(client: GoogleGenAI, prompt: string) {
 		contents: prompt,
 		config: {
 			systemInstruction:
-				"与えられた根拠だけで博多どんたくの4択クイズを1問作成してください。根拠にない内容は禁止です。出題テーマは幅広く散らし、起源・歴史・由来だけに偏らないでください。既出テーマや既出問題に似た切り口は避け、同じ事実の言い換えや数字だけを変えた問題も避けてください。topic はその回の切り口がわかる簡潔なテーマ名にしてください。問題文と解説は簡潔にし、応答は JSON オブジェクトのみを返し、説明文、Markdown、コードフェンスは含めないでください。",
+				"与えられた根拠だけで博多どんたくの4択クイズを1問作成してください。根拠にない内容は禁止です。出題テーマは幅広く散らし、起源・歴史・由来だけに偏らないでください。既出テーマや既出問題に似た切り口は避け、同じ事実の言い換えや数字だけを変えた問題も避けてください。topic はその回の切り口がわかる簡潔なテーマ名にしてください。問題文・選択肢・解説は小中学生向けのやさしい言葉を優先し、難しい固有名詞や専門語を多用しないでください。年号・人数・正式名称の丸暗記問題より、役割・特徴・楽しみ方・流れが分かる問題を優先してください。根拠は守りつつ、細部に寄りすぎないでください。問題文と解説は簡潔にし、応答は JSON オブジェクトのみを返し、説明文、Markdown、コードフェンスは含めないでください。",
 			temperature: 0,
 			maxOutputTokens: 1024,
 			responseMimeType: "application/json",
@@ -668,20 +743,62 @@ function trimSearchResult(result: SearchResult): SearchResult {
 	};
 }
 
-function selectQueryProfile(input: CreateQuizGenerationRequest): QueryProfile {
-	const startIndex = stableHash(input.sessionSeed) % QUERY_PROFILES.length;
-	const questionIndex = input.history.questions.length % QUERY_PROFILES.length;
-	return QUERY_PROFILES[(startIndex + questionIndex) % QUERY_PROFILES.length];
+function buildQueryPlan(input: CreateQuizGenerationRequest): QueryPlan {
+	const promptInstruction = selectPromptInstruction(input);
+	const searchKeyword = selectSearchKeyword(input);
+	const angle = selectAngle(input);
+
+	return {
+		promptInstruction,
+		searchKeyword,
+		angle,
+		searchQuery: buildSearchQuery(searchKeyword, angle),
+	};
 }
 
-function selectVariationAngle(
-	input: CreateQuizGenerationRequest & { queryProfile: QueryProfile },
+function selectPromptInstruction(
+	input: CreateQuizGenerationRequest,
+): PromptInstructionOption {
+	const index =
+		stableHash(`${input.sessionSeed}:${input.history.questions.length}:prompt`) %
+		PROMPT_INSTRUCTIONS.length;
+	return PROMPT_INSTRUCTIONS[index];
+}
+
+function selectSearchKeyword(
+	input: CreateQuizGenerationRequest,
+): SearchKeywordOption {
+	const index =
+		stableHash(`${input.sessionSeed}:${input.history.questions.length}:keyword`) %
+		SEARCH_KEYWORDS.length;
+	return SEARCH_KEYWORDS[index];
+}
+
+function selectAngle(input: CreateQuizGenerationRequest): AngleOption {
+	const index =
+		stableHash(`${input.sessionSeed}:${input.history.questions.length}:angle`) %
+		ANGLE_OPTIONS.length;
+	return ANGLE_OPTIONS[index];
+}
+
+function buildSearchQuery(
+	searchKeyword: SearchKeywordOption,
+	angle: AngleOption,
 ): string {
-	const angleIndex =
-		stableHash(
-			`${input.sessionSeed}:${input.history.questions.length}:${input.queryProfile.id}`,
-		) % input.queryProfile.variationAngles.length;
-	return input.queryProfile.variationAngles[angleIndex];
+	return [
+		"博多どんたく",
+		...searchKeyword.terms,
+		angle.label,
+	].join(" ");
+}
+
+function describeQueryPlan(queryPlan: QueryPlan) {
+	return {
+		promptInstruction: queryPlan.promptInstruction.id,
+		searchKeyword: queryPlan.searchKeyword.id,
+		angle: queryPlan.angle.id,
+		searchQuery: queryPlan.searchQuery,
+	};
 }
 
 function stableHash(value: string): number {
@@ -695,9 +812,9 @@ function stableHash(value: string): number {
 }
 
 function createDebugLabel(
-	input: CreateQuizGenerationRequest & { queryProfile?: QueryProfile },
+	input: CreateQuizGenerationRequest & { queryPlan?: QueryPlan },
 ): string {
-	return input.queryProfile
-		? `${input.queryProfile.id}:${input.sessionSeed}`
+	return input.queryPlan
+		? `${input.queryPlan.promptInstruction.id}:${input.queryPlan.searchKeyword.id}:${input.queryPlan.angle.id}:${input.sessionSeed}`
 		: input.sessionSeed;
 }
