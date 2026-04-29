@@ -3,10 +3,13 @@ import { AnimatePresence, motion } from "motion/react";
 import "./vendor-pattern.css";
 import "./App.css";
 import { QuestionScreen } from "./components/QuestionScreen";
+import { ResultScreen } from "./components/ResultScreen";
 import { StartScreen } from "./components/StartScreen";
 import type { SampleQuestion } from "./data/sampleQuestions";
 
 const TOTAL_QUESTIONS = 5;
+
+type Screen = "start" | "quiz" | "result";
 
 type QuizGenerationRequest = {
 	sessionSeed: string;
@@ -17,9 +20,10 @@ type QuizGenerationRequest = {
 };
 
 function App() {
-	const [hasStarted, setHasStarted] = useState(false);
+	const [screen, setScreen] = useState<Screen>("start");
 	const [questions, setQuestions] = useState<SampleQuestion[]>([]);
 	const [currentIndex, setCurrentIndex] = useState(0);
+	const [score, setScore] = useState(0);
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
 	const [sessionSeed, setSessionSeed] = useState(() => crypto.randomUUID());
@@ -76,11 +80,12 @@ function App() {
 		setError(null);
 		setQuestions([]);
 		setCurrentIndex(0);
+		setScore(0);
 
 		const question = await fetchQuestion(nextSessionSeed, []);
 		if (question) {
 			setQuestions([question]);
-			setHasStarted(true);
+			setScreen("quiz");
 		} else {
 			setError(
 				"クイズの読み込みに失敗しました。もう一度お試しください。",
@@ -89,13 +94,16 @@ function App() {
 		setIsLoading(false);
 	};
 
-	const handleNext = async () => {
+	const handleNext = async (isCorrect: boolean) => {
 		if (isLoading) {
 			return;
 		}
 
+		const nextScore = score + (isCorrect ? 1 : 0);
+		setScore(nextScore);
+
 		if (currentIndex >= TOTAL_QUESTIONS - 1) {
-			handleRestart();
+			setScreen("result");
 			return;
 		}
 
@@ -117,9 +125,10 @@ function App() {
 	};
 
 	const handleRestart = () => {
-		setHasStarted(false);
+		setScreen("start");
 		setQuestions([]);
 		setCurrentIndex(0);
+		setScore(0);
 		setError(null);
 		setSessionSeed(crypto.randomUUID());
 	};
@@ -136,13 +145,11 @@ function App() {
 				<AnimatePresence mode="wait">
 					<motion.div
 						key={
-							hasStarted
-								? "quiz"
-								: isLoading
-									? "loading"
-									: error
-										? "error"
-										: "start"
+							isLoading
+								? "loading"
+								: error
+									? "error"
+									: screen
 						}
 						initial={{ opacity: 0, y: 18 }}
 						animate={{ opacity: 1, y: 0 }}
@@ -171,7 +178,13 @@ function App() {
 									</motion.button>
 								</div>
 							</section>
-						) : hasStarted && questions.length > 0 ? (
+						) : screen === "result" ? (
+							<ResultScreen
+								score={score}
+								totalQuestions={TOTAL_QUESTIONS}
+								onBackToTitle={handleRestart}
+							/>
+						) : screen === "quiz" && questions.length > 0 ? (
 							<QuestionScreen
 								questions={questions}
 								currentIndex={currentIndex}
@@ -179,9 +192,9 @@ function App() {
 								onNext={handleNext}
 								onRestart={handleRestart}
 							/>
-							) : (
-								<StartScreen onStart={handleStart} />
-							)}
+						) : (
+							<StartScreen onStart={handleStart} />
+						)}
 					</motion.div>
 				</AnimatePresence>
 			</main>
