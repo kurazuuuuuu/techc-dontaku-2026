@@ -5,7 +5,7 @@ import { Modal } from "./Modal";
 import { QuestionCard } from "./QuestionCard";
 
 type QuestionScreenProps = {
-	onNext: () => Promise<void>;
+	onNext: (isCorrect: boolean) => Promise<void>;
 	onRestart: () => void;
 	questions: SampleQuestion[];
 	currentIndex: number;
@@ -31,16 +31,11 @@ export function QuestionScreen({
 			return;
 		}
 
-		if (isLastQuestion) {
-			onRestart();
-			return;
-		}
-
 		setSelectedChoice(null);
 		setIsAdvancing(true);
 
 		try {
-			await onNext();
+			await onNext(isCorrect);
 		} finally {
 			setIsAdvancing(false);
 		}
@@ -112,7 +107,7 @@ export function QuestionScreen({
 								{isAdvancing
 									? "読み込み中..."
 									: isLastQuestion
-										? "タイトルへ戻る"
+										? "結果を見る"
 										: "次の問題へ"}
 							</motion.button>
 						</div>
