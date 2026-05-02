@@ -80,7 +80,7 @@ describe("quiz generator", () => {
 			}),
 		);
 		expect(fetchMock).toHaveBeenCalledWith(
-			"https://gateway.ai.cloudflare.com/v1/account-id/dontaku-gateway/google-ai-studio/v1beta/models/gemini-2.5-flash-lite:generateContent",
+			"https://gateway.ai.cloudflare.com/v1/account-id/dontaku-gateway/google-ai-studio/v1beta/models/gemini-3.1-flash-lite-preview:generateContent",
 			expect.objectContaining({
 				method: "POST",
 			}),

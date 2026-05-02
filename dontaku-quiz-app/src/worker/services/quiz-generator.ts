@@ -27,10 +27,17 @@ type AngleOption = {
 	label: string;
 };
 
+type QuestionFormOption = {
+	id: string;
+	label: string;
+	instruction: string;
+};
+
 type QueryPlan = {
 	promptInstruction: PromptInstructionOption;
 	searchKeyword: SearchKeywordOption;
 	angle: AngleOption;
+	questionForm: QuestionFormOption;
 	searchQuery: string;
 };
 
@@ -161,6 +168,57 @@ const ANGLE_OPTIONS: AngleOption[] = [
 	{ id: "participant-view", label: "参加者目線" },
 	{ id: "visitor-view", label: "来場者目線" },
 	{ id: "local-connection", label: "地域とのつながり" },
+];
+
+const QUESTION_FORMS: QuestionFormOption[] = [
+	{
+		id: "purpose",
+		label: "目的・理由を問う型",
+		instruction:
+			"問題文は『〜は何のために行われるでしょう？』『〜の理由として正しいのはどれでしょう？』のように、目的や理由を問う形にしてください。正解は根拠に書かれている目的・理由から取り、不正解は根拠にある別の事実か、明らかに博多どんたくと無関係な目的から作ってください。",
+	},
+	{
+		id: "feature",
+		label: "特徴を問う型",
+		instruction:
+			"問題文は『〜の特徴として正しいのはどれでしょう？』のように、ものや行事の特徴を1つ問う形にしてください。正解は根拠に書かれている特徴から取り、不正解は根拠にある別の特徴か、明らかに無関係な特徴から作ってください。",
+	},
+	{
+		id: "name",
+		label: "呼び方・名称を問う型",
+		instruction:
+			"問題文は『〜のことを何と呼ぶでしょう？』のように、名称や呼び方を問う形にしてください。正解は根拠に書かれている名称から取り、不正解は他の祭りや無関係な名称から作ってください。",
+	},
+	{
+		id: "role",
+		label: "役割を問う型",
+		instruction:
+			"問題文は『〜はどんな役割を持っているでしょう？』のように、役割や働きを問う形にしてください。正解は根拠に書かれている役割から取り、不正解は根拠にある別の役割か、明らかに無関係な役割から作ってください。",
+	},
+	{
+		id: "scene",
+		label: "場面を選ぶ型",
+		instruction:
+			"問題文は『〜が見られるのはどんな場面でしょう？』のように、場面・タイミングを問う形にしてください。正解は根拠に書かれている場面から取り、不正解は根拠にある別の場面か、明らかに無関係な場面から作ってください。",
+	},
+	{
+		id: "fill-in",
+		label: "空欄補充型",
+		instruction:
+			"問題文は『博多どんたくでは〜が（　）役割を担っています。』のように、文中の空欄に当てはまる言葉を選ばせる形にしてください。空欄に入る正解は根拠から取り、不正解は根拠にある別の語か、明らかに無関係な語から作ってください。",
+	},
+	{
+		id: "what-is",
+		label: "何かを問う型",
+		instruction:
+			"問題文は『〜とは何でしょう？』『〜にあたるのはどれでしょう？』のように、対象そのものを問う形にしてください。正解は根拠に書かれている事実から取り、不正解は根拠にある別の事実か、明らかに無関係なものから作ってください。",
+	},
+	{
+		id: "when-where",
+		label: "いつ・どこを問う型",
+		instruction:
+			"問題文は『〜はいつ行われるでしょう？』『〜はどこで見られるでしょう？』のように、時期・場所を問う形にしてください。正解は根拠に書かれている時期・場所から取り、不正解は明らかに違う時期・場所から作ってください。",
+	},
 ];
 const geminiStructuredQuizSchema = {
 	type: "object",
@@ -473,9 +531,12 @@ function buildQuizPrompt(
 		plan.promptInstruction.instruction,
 		`今回の検索キーワード群: ${plan.searchKeyword.label}（${plan.searchKeyword.terms.join(" / ")}）`,
 		`今回とくに優先する切り口: ${plan.angle.label}`,
+		`今回の質問形式: ${plan.questionForm.label}`,
+		plan.questionForm.instruction,
 		"テーマ候補は幅広く選び、同じ事実の言い換えや数字違いだけの問題は避けてください。",
 		"小中学生でも読みやすい語彙を優先し、難しい固有名詞や専門的な言い回しはなるべく避けてください。",
 		"年号・人数・正式名称の丸暗記ではなく、『何のため』『どんな特徴』『どう楽しむか』が分かる問題を優先してください。",
+		"【再確認】根拠は博多どんたくの全てを網羅していません。根拠に記載がないことを『誤り』として扱わないでください。不正解の3択は、根拠に書かれている別の事実か、明らかに博多どんたくと無関係なもの（他地域の祭り、関係ない季節、関係ない動物・食べ物など）から作ってください。誤りを探させる問題形式（『正しくないのは』『ふさわしくないのは』など）は使わないでください。",
 		recentTopics
 			? `避ける既出テーマ: ${recentTopics}`
 			: "避ける既出テーマ: なし",
@@ -491,12 +552,22 @@ function buildQuizPrompt(
 
 function requestGeminiStructuredQuiz(client: GoogleGenAI, prompt: string) {
 	return client.models.generateContent({
-		model: "gemini-2.5-flash-lite",
+		model: "gemini-3.1-flash-lite-preview",
 		contents: prompt,
 		config: {
 			systemInstruction:
-				"与えられた根拠だけで博多どんたくの4択クイズを1問作成してください。根拠にない内容は禁止です。出題テーマは幅広く散らし、起源・歴史・由来だけに偏らないでください。既出テーマや既出問題に似た切り口は避け、同じ事実の言い換えや数字だけを変えた問題も避けてください。topic はその回の切り口がわかる簡潔なテーマ名にしてください。問題文・選択肢・解説は小中学生向けのやさしい言葉を優先し、難しい固有名詞や専門語を多用しないでください。年号・人数・正式名称の丸暗記問題より、役割・特徴・楽しみ方・流れが分かる問題を優先してください。根拠は守りつつ、細部に寄りすぎないでください。問題文と解説は簡潔にし、応答は JSON オブジェクトのみを返し、説明文、Markdown、コードフェンスは含めないでください。",
-			temperature: 0,
+				[
+					"あなたは与えられた根拠（context）から博多どんたくの4択クイズを1問作成するアシスタントです。",
+					"【正解の作り方】正解は必ず根拠に明示的に書かれている事実から取ってください。根拠にない事実を正解にしないでください。",
+					"【不正解の作り方・最重要】不正解の3択は『根拠に書かれている別の事実』または『博多どんたく・福岡市・五月の祭りと明らかに無関係な事柄（例：他地域の祭り名、季節違いのもの、関係ない動物や食べ物など）』から作ってください。",
+					"【絶対禁止】『根拠に記載がない』ことを理由に『誤り』と判断しないでください。根拠は博多どんたくの全てを網羅していません。記載がないだけで実際は事実かもしれません。例：根拠に『衣装にしゃもじを使う』としか書かれていなくても、『扇子は使われていない』と判断してはいけません。代わりに、根拠にある別の事実（開催時期、参加者、場所など）を使って不正解を作ってください。",
+					"【質問形式の禁止】『次のうち誤っているのは？』『正しくないのは？』『ふさわしくないのは？』『当てはまらないのは？』のような、誤りを探させる出題形式は使わないでください。常に『正解は何か』を直接問う形にしてください。",
+					"【出題テーマ】出題テーマは幅広く散らし、起源・歴史・由来だけに偏らないでください。既出テーマや既出問題に似た切り口は避け、同じ事実の言い換えや数字だけを変えた問題も避けてください。topic はその回の切り口がわかる簡潔なテーマ名にしてください。",
+					"【表現】問題文・選択肢・解説は小中学生向けのやさしい言葉を優先し、難しい固有名詞や専門語を多用しないでください。年号・人数・正式名称の丸暗記問題より、役割・特徴・楽しみ方・流れが分かる問題を優先してください。問題文と解説は簡潔にしてください。",
+					"【出力】応答は JSON オブジェクトのみを返し、説明文、Markdown、コードフェンスは含めないでください。",
+				].join("\n"),
+			temperature: 0.9,
+			topP: 0.95,
 			maxOutputTokens: 1024,
 			responseMimeType: "application/json",
 			responseJsonSchema: geminiStructuredQuizSchema,
@@ -747,38 +818,58 @@ function buildQueryPlan(input: CreateQuizGenerationRequest): QueryPlan {
 	const promptInstruction = selectPromptInstruction(input);
 	const searchKeyword = selectSearchKeyword(input);
 	const angle = selectAngle(input);
+	const questionForm = selectQuestionForm(input);
 
 	return {
 		promptInstruction,
 		searchKeyword,
 		angle,
+		questionForm,
 		searchQuery: buildSearchQuery(searchKeyword, angle),
 	};
+}
+
+function pickFromShuffled<T>(
+	list: readonly T[],
+	input: CreateQuizGenerationRequest,
+	salt: string,
+): T {
+	const seed = stableHash(`${input.sessionSeed}:${salt}`);
+	const shuffled = deterministicShuffle(list, seed);
+	return shuffled[input.history.questions.length % shuffled.length];
 }
 
 function selectPromptInstruction(
 	input: CreateQuizGenerationRequest,
 ): PromptInstructionOption {
-	const index =
-		stableHash(`${input.sessionSeed}:${input.history.questions.length}:prompt`) %
-		PROMPT_INSTRUCTIONS.length;
-	return PROMPT_INSTRUCTIONS[index];
+	return pickFromShuffled(PROMPT_INSTRUCTIONS, input, "prompt");
 }
 
 function selectSearchKeyword(
 	input: CreateQuizGenerationRequest,
 ): SearchKeywordOption {
-	const index =
-		stableHash(`${input.sessionSeed}:${input.history.questions.length}:keyword`) %
-		SEARCH_KEYWORDS.length;
-	return SEARCH_KEYWORDS[index];
+	return pickFromShuffled(SEARCH_KEYWORDS, input, "keyword");
 }
 
 function selectAngle(input: CreateQuizGenerationRequest): AngleOption {
-	const index =
-		stableHash(`${input.sessionSeed}:${input.history.questions.length}:angle`) %
-		ANGLE_OPTIONS.length;
-	return ANGLE_OPTIONS[index];
+	return pickFromShuffled(ANGLE_OPTIONS, input, "angle");
+}
+
+function selectQuestionForm(
+	input: CreateQuizGenerationRequest,
+): QuestionFormOption {
+	return pickFromShuffled(QUESTION_FORMS, input, "question-form");
+}
+
+function deterministicShuffle<T>(list: readonly T[], seed: number): T[] {
+	const result = [...list];
+	let state = (seed >>> 0) || 1;
+	for (let index = result.length - 1; index > 0; index -= 1) {
+		state = (state * 1103515245 + 12345) >>> 0;
+		const swapIndex = state % (index + 1);
+		[result[index], result[swapIndex]] = [result[swapIndex], result[index]];
+	}
+	return result;
 }
 
 function buildSearchQuery(
@@ -797,6 +888,7 @@ function describeQueryPlan(queryPlan: QueryPlan) {
 		promptInstruction: queryPlan.promptInstruction.id,
 		searchKeyword: queryPlan.searchKeyword.id,
 		angle: queryPlan.angle.id,
+		questionForm: queryPlan.questionForm.id,
 		searchQuery: queryPlan.searchQuery,
 	};
 }
@@ -815,6 +907,6 @@ function createDebugLabel(
 	input: CreateQuizGenerationRequest & { queryPlan?: QueryPlan },
 ): string {
 	return input.queryPlan
-		? `${input.queryPlan.promptInstruction.id}:${input.queryPlan.searchKeyword.id}:${input.queryPlan.angle.id}:${input.sessionSeed}`
+		? `${input.queryPlan.promptInstruction.id}:${input.queryPlan.searchKeyword.id}:${input.queryPlan.angle.id}:${input.queryPlan.questionForm.id}:${input.sessionSeed}`
 		: input.sessionSeed;
 }

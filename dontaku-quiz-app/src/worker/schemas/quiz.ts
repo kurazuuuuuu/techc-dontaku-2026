@@ -1,8 +1,8 @@
 import { z } from "zod";
 
 const quizHistorySchema = z.object({
-	topics: z.array(z.string().trim().min(1).max(120)).max(4).default([]),
-	questions: z.array(z.string().trim().min(1).max(200)).max(4).default([]),
+	topics: z.array(z.string().trim().min(1).max(120)).max(24).default([]),
+	questions: z.array(z.string().trim().min(1).max(200)).max(24).default([]),
 });
 
 export const createQuizGenerationRequestSchema = z.object({
@@ -105,12 +105,12 @@ export const createQuizGenerationRequestJsonSchema = {
 				topics: {
 					type: "array",
 					items: { type: "string", minLength: 1, maxLength: 120 },
-					maxItems: 4,
+					maxItems: 24,
 				},
 				questions: {
 					type: "array",
 					items: { type: "string", minLength: 1, maxLength: 200 },
-					maxItems: 4,
+					maxItems: 24,
 				},
 			},
 			required: ["topics", "questions"],
