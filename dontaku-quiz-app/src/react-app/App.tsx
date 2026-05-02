@@ -8,6 +8,7 @@ import { StartScreen } from "./components/StartScreen";
 import type { SampleQuestion } from "./data/sampleQuestions";
 
 const TOTAL_QUESTIONS = 5;
+const MAX_DEDUP_RETRIES = 3;
 
 type Screen = "start" | "quiz" | "result";
 
@@ -19,6 +20,33 @@ type QuizGenerationRequest = {
 	};
 };
 
+function normalizeQuestionText(value: string): string {
+	return value
+		.toLowerCase()
+		.replace(/[\s\u3000.,。、！？・?!…「」『』（）()【】\-―ー]/g, "");
+}
+
+function isDuplicateQuestion(
+	candidate: SampleQuestion,
+	existing: SampleQuestion[],
+): boolean {
+	const candidateText = normalizeQuestionText(candidate.question);
+	if (!candidateText) {
+		return false;
+	}
+	return existing.some((item) => {
+		const existingText = normalizeQuestionText(item.question);
+		if (!existingText) {
+			return false;
+		}
+		return (
+			candidateText === existingText ||
+			candidateText.includes(existingText) ||
+			existingText.includes(candidateText)
+		);
+	});
+}
+
 function App() {
 	const [screen, setScreen] = useState<Screen>("start");
 	const [questions, setQuestions] = useState<SampleQuestion[]>([]);
@@ -28,7 +56,7 @@ function App() {
 	const [error, setError] = useState<string | null>(null);
 	const [sessionSeed, setSessionSeed] = useState(() => crypto.randomUUID());
 
-	const fetchQuestion = useCallback(
+	const requestQuestionOnce = useCallback(
 		async (
 			activeSessionSeed: string,
 			historyQuestions: SampleQuestion[],
@@ -37,8 +65,8 @@ function App() {
 				const requestBody: QuizGenerationRequest = {
 					sessionSeed: activeSessionSeed,
 					history: {
-						topics: historyQuestions.slice(-4).map((item) => item.category),
-						questions: historyQuestions.slice(-4).map((item) => item.question),
+						topics: historyQuestions.slice(-20).map((item) => item.category),
+						questions: historyQuestions.slice(-20).map((item) => item.question),
 					},
 				};
 				const res = await fetch("/api/quiz/generate", {
@@ -71,6 +99,33 @@ function App() {
 			}
 		},
 		[],
+	);
+
+	const fetchQuestion = useCallback(
+		async (
+			activeSessionSeed: string,
+			historyQuestions: SampleQuestion[],
+		): Promise<SampleQuestion | null> => {
+			let lastCandidate: SampleQuestion | null = null;
+			for (let attempt = 0; attempt < MAX_DEDUP_RETRIES; attempt++) {
+				const candidate = await requestQuestionOnce(
+					activeSessionSeed,
+					historyQuestions,
+				);
+				if (!candidate) {
+					return lastCandidate;
+				}
+				if (!isDuplicateQuestion(candidate, historyQuestions)) {
+					return candidate;
+				}
+				lastCandidate = candidate;
+				console.warn(
+					`[App] Duplicate question detected (attempt ${attempt + 1}/${MAX_DEDUP_RETRIES}), retrying.`,
+				);
+			}
+			return lastCandidate;
+		},
+		[requestQuestionOnce],
 	);
 
 	const handleStart = async () => {
