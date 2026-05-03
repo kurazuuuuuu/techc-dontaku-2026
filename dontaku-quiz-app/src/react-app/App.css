@@ -215,6 +215,19 @@
 	font-size: 1.08rem;
 }
 
+.ai-disclaimer {
+	margin: 14px auto 0;
+	max-width: 48ch;
+	color: rgba(63, 71, 82, 0.84);
+	font-size: 0.82rem;
+	line-height: 1.5;
+}
+
+.quiz-disclaimer {
+	margin: 8px 0 0;
+	max-width: 42ch;
+}
+
 .result-score-label {
 	margin: 28px 0 0;
 	color: #1f3a5f;

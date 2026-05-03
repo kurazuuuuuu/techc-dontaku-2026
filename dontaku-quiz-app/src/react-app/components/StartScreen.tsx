@@ -20,6 +20,9 @@ export function StartScreen({ onStart }: StartScreenProps) {
 				<p className="start-description">
 					博多どんたくの歴史や見どころを、クイズで楽しく体験しましょう。
 				</p>
+				<p className="ai-disclaimer">
+					※ 一部の問題・解説には AI 生成の内容を含みます。
+				</p>
 				<motion.button
 					type="button"
 					className="start-button"

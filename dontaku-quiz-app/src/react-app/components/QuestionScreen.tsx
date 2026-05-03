@@ -52,6 +52,9 @@ export function QuestionScreen({
 				<div>
 					<p className="eyebrow">Hakata Dontaku Quiz</p>
 					<h2>博多どんたくクイズ</h2>
+					<p className="ai-disclaimer quiz-disclaimer">
+						※ 一部の問題・解説には AI 生成の内容を含みます。
+					</p>
 				</div>
 				<motion.button
 					type="button"
